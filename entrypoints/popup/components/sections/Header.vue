@@ -1,0 +1,59 @@
+<script setup lang="ts">
+import { SwitchRoot, SwitchThumb } from 'reka-ui'
+import { useStorageKey } from '../../composables/useStorageKey'
+import { KeyExtensionStatus } from '../../../../storage-keys'
+
+import pkg from '../../../../package.json'
+
+const { value, loaded, setValue } = useStorageKey(KeyExtensionStatus)
+const version = pkg.version
+</script>
+
+<template>
+ <header class="text-center">
+  <div class="flex items-center justify-center relative min-h-[36px]">
+   <!-- Left: mute/block settings -->
+   <a
+    href="https://twitter.com/settings/mute_and_block"
+    target="_blank"
+    rel="noreferrer"
+    class="absolute left-0 flex items-center justify-center w-8 h-8 rounded-full hover:bg-card-bg transition-colors"
+    aria-label="静音和屏蔽设置"
+    title="静音和屏蔽设置"
+   >
+    <svg class="fill-accent" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+     <path d="M18 6.59V1.2L8.71 7H5.5A2.5 2.5 0 003 9.5v5A2.5 2.5 0 005.5 17h2.09l-2.3 2.29 1.42 1.42 15.5-15.5-1.42-1.42L18 6.59zm-8 8V8.55l6-3.75v3.79l-6 6zM5 9.5c0-.28.22-.5.5-.5H8v6H5.5c-.28 0-.5-.22-.5-.5v-5zm6.5 9.24l1.45-1.45L16 19.2V14l2 .02v8.78l-6.5-4.06z" />
+    </svg>
+   </a>
+
+   <!-- Center: title with hover version badge above title -->
+   <div class="group relative flex flex-col items-center cursor-pointer">
+    <span
+     class="absolute -top-2.5 text-[9px] font-mono font-semibold text-accent opacity-0 group-hover:opacity-100 transition-all duration-200 transform group-hover:-translate-y-0.5 pointer-events-none whitespace-nowrap bg-accent/15 px-1.5 py-0.2 rounded-full border border-accent/30 shadow-xs"
+    >
+     {{ version }}
+    </span>
+    <h1 class="text-xl font-extrabold tracking-tight">
+     <span>X FOCUS</span>
+    </h1>
+   </div>
+
+   <!-- Right: extension toggle (no label) -->
+   <div class="absolute right-0 flex items-center">
+    <SwitchRoot
+     v-if="loaded"
+     :id="KeyExtensionStatus"
+     :model-value="value"
+     @update:model-value="setValue"
+     class="w-8 h-[18px] rounded-full relative flex items-center cursor-pointer shrink-0"
+     :class="value ? 'bg-accent' : 'bg-secondary-text/40'"
+    >
+     <SwitchThumb
+      class="block w-3.5 h-3.5 rounded-full shadow transition-transform duration-100 bg-white"
+      :class="value ? 'translate-x-[15px]' : 'translate-x-0.5'"
+     />
+    </SwitchRoot>
+   </div>
+  </div>
+ </header>
+</template>

@@ -1,0 +1,328 @@
+import { evaluateSpam } from '../../shared/spam-rules'
+import { recordIntercept } from '../../shared/spam-logger'
+import { extractTweetInfo } from '../../shared/parse-tweet'
+import type { SpamEvaluation, SpamRuleId } from '../../shared/spam-types'
+import { injectKeywordButton } from './keyword-picker'
+import { applyAllow, applyHideDirect, resetArticleSpamState } from './article-state'
+import { getSpamConfig, invalidateSpamConfigCache } from './config'
+import {
+  cleanupDebugBars,
+  ensureBar,
+  getDebugConfigKey,
+  installScrollStabilityStyles,
+  isInsideDialog,
+  removeDebugBar,
+  removeScrollStabilityStyles,
+} from './debug-bar'
+import { DEBUG_BAR_ID, DEBUG_BAR_VERSION, DEBUG_CONFIG_ATTR, PROCESSED_ATTR, SCORE_ATTR, STATE_ATTR, XF_SELF_SELECTOR } from './dom-attrs'
+import type { SpamConfig } from './types'
+
+export { applyReplace } from './article-state'
+export { buildDebugBar } from './debug-bar'
+export { buildPlaceholder } from './placeholder'
+
+// 缓存上次的评估输入指纹，用于增量评估短路（见 processArticle）
+const SPAM_FP_ATTR = 'data-xf-spam-fp'
+
+// 配置版本：每次 invalidate 自增，使文本指纹失效、强制重评。
+// 黑/白名单、阈值、启用规则的变更都走 invalidateSpamConfig，从而触发重算。
+let spamConfigVersion = 0
+
+async function processArticle(article: HTMLElement, config: SpamConfig) {
+  // X 推文分阶段渲染；每轮重评估能避免初次拿到不完整 text/name。
+  const info = extractTweetInfo(document, article)
+  if (!info) return
+
+  // 增量评估短路（仅非 debug）：已处理且「文本指纹 + 配置版本」未变则跳过重算。
+  // - X 分阶段渲染会让 info.text 变化 → 指纹变 → 自然触发重评，渐进渲染不受影响；
+  // - config 变化（黑/白名单/阈值/规则）经 invalidateSpamConfig 使 spamConfigVersion
+  //   自增 → 指纹失效 → 强制重评，保证策略变更立即生效；
+  // - debug 模式不短路，保持「始终刷新」便于排查。
+  if (!config.debug) {
+    const fp = `${info.text.length}:${info.text.slice(0, 16)}:${info.text.slice(-16)}:${info.authorHandle}:v${spamConfigVersion}`
+    if (article.getAttribute(PROCESSED_ATTR) === '1' && article.getAttribute(SPAM_FP_ATTR) === fp) {
+      return
+    }
+    article.setAttribute(SPAM_FP_ATTR, fp)
+  }
+
+  if (info.authorHandle && config.blacklist.has(info.authorHandle.toLowerCase())) {
+    article.setAttribute(PROCESSED_ATTR, '1')
+    const evaluation: SpamEvaluation = {
+      score: 999,
+      hits: [{ id: 'marketing_keyword' as SpamRuleId, label: '用户黑名单', score: 999 }],
+      category: 'marketing',
+      text: info.text,
+      authorHandle: info.authorHandle,
+    }
+    article.setAttribute(SCORE_ATTR, String(evaluation.score))
+    if (config.debug) {
+      applyAllow(article)
+      article.setAttribute(SCORE_ATTR, String(evaluation.score))
+      ensureBar(article, evaluation, config)
+    } else {
+      if (article.getAttribute(STATE_ATTR) !== 'hidden') {
+        void recordIntercept({
+          authorHandle: info.authorHandle,
+          authorName: info.authorName,
+          text: info.text,
+          score: evaluation.score,
+          category: evaluation.category,
+          hits: evaluation.hits,
+          action: 'filter',
+        })
+      }
+      applyHideDirect(article)
+    }
+    return
+  }
+
+  if (info.authorHandle && config.whitelist.has(info.authorHandle.toLowerCase())) {
+    if (article.getAttribute(STATE_ATTR)) applyAllow(article)
+    article.setAttribute(PROCESSED_ATTR, '1')
+    return
+  }
+
+  const evaluation = evaluateSpam({
+    text: info.text,
+    authorName: info.authorName,
+    authorHandle: info.authorHandle,
+    // 空数组表示用户明确清空了词库；只有 storage key 缺失时，getStorage 才会回退默认词库。
+    keywords: config.keywords,
+    enabledRules: config.enabledRules,
+  })
+
+  article.setAttribute(PROCESSED_ATTR, '1')
+  article.setAttribute(SCORE_ATTR, String(evaluation.score))
+
+  const shouldHide = evaluation.score >= config.threshold
+
+  if (config.debug) {
+    if (article.getAttribute(STATE_ATTR) === 'hidden') applyAllow(article)
+    ensureBar(article, evaluation, config)
+    return
+  }
+
+  const isHidden = article.getAttribute(STATE_ATTR) === 'hidden'
+  if (shouldHide === isHidden) {
+    ensureBar(article, evaluation, config)
+    return
+  }
+
+  applyAllow(article)
+
+  if (shouldHide) {
+    void recordIntercept({
+      authorHandle: info.authorHandle,
+      authorName: info.authorName,
+      text: info.text,
+      score: evaluation.score,
+      category: evaluation.category,
+      hits: evaluation.hits,
+      action: 'filter',
+    })
+    applyHideDirect(article)
+    ensureBar(article, evaluation, config)
+  }
+}
+
+export function invalidateSpamConfig() {
+  invalidateSpamConfigCache()
+  spamConfigVersion++
+}
+
+let scanScheduled = false
+async function scheduleScan() {
+  if (scanScheduled) return
+  scanScheduled = true
+  const idle = (window as any).requestIdleCallback as ((cb: () => void) => void) | undefined
+  if (idle) {
+    idle(() => {
+      scanScheduled = false
+      void runScan()
+    })
+  } else {
+    setTimeout(() => {
+      scanScheduled = false
+      void runScan()
+    }, 50)
+  }
+}
+
+export function isTweetDetailPage(pathname: string = window.location.pathname): { isDetailPage: boolean; statusId?: string } {
+  if (/\/(analytics|retweets|likes|quotes)$/.test(pathname)) {
+    return { isDetailPage: false }
+  }
+  const match = pathname.match(/\/status\/(\d+)/)
+  return { isDetailPage: Boolean(match), statusId: match?.[1] }
+}
+
+export async function runScan(force = false) {
+  const config = await getSpamConfig()
+  if (!config) {
+    cleanupDebugBars()
+    removeScrollStabilityStyles()
+    document.querySelectorAll<HTMLElement>(`article[${PROCESSED_ATTR}]`).forEach((el) => {
+      applyAllow(el)
+      el.removeAttribute(PROCESSED_ATTR)
+    })
+    cleanupOrphanReplacements()
+    return
+  }
+
+  const { isDetailPage, statusId } = isTweetDetailPage()
+
+  // 限制评分范围：仅推文详情页下的评论参与评分体系
+  // 非详情页（如 /home 首页时间线）完全不评分、不展示调试条，并清理可能残留的调试条与隐藏状态
+  if (!isDetailPage) {
+    cleanupDebugBars()
+    removeScrollStabilityStyles()
+    cleanupOrphanReplacements()
+    document.querySelectorAll<HTMLElement>(`article[${STATE_ATTR}="hidden"], article[${PROCESSED_ATTR}]`).forEach((el) => {
+      applyAllow(el)
+      el.removeAttribute(PROCESSED_ATTR)
+      el.removeAttribute(SCORE_ATTR)
+    })
+    return
+  }
+
+  installScrollStabilityStyles()
+  if (!config.debug) cleanupDebugBars()
+  cleanupOrphanReplacements()
+
+  const articles = Array.from(document.querySelectorAll<HTMLElement>('article[data-testid="tweet"]'))
+  if (!articles.length) return
+
+  // 定位主贴索引：处于 index <= mainTweetIndex 的是主贴（及可能的前置上下文），严格跳过评分
+  let mainTweetIndex = -1
+  if (statusId) {
+    mainTweetIndex = articles.findIndex((art) =>
+      art.querySelector(`a[href*="/status/${statusId}"]`),
+    )
+  }
+  if (mainTweetIndex === -1) {
+    // 降级：若未能找到对应 statusId 的链接，默认第 1 条为主贴
+    mainTweetIndex = 0
+  }
+
+  const debugConfigKey = config.debug ? getDebugConfigKey(config) : ''
+  for (let i = 0; i < articles.length; i++) {
+    const article = articles[i]
+    if (article.closest('[data-xf-spam-hidden-replacement]')) continue
+    if (config.debug && isInsideDialog(article)) removeDebugBar(article)
+
+    // 主贴（及主贴前置上下文）：不进入评分体系、不展示调试条
+    if (i <= mainTweetIndex) {
+      removeDebugBar(article)
+      if (article.getAttribute(STATE_ATTR) === 'hidden') applyAllow(article)
+      article.removeAttribute(PROCESSED_ATTR)
+      article.removeAttribute(SCORE_ATTR)
+      injectKeywordButton(article)
+      continue
+    }
+
+    // 评论推文（index > mainTweetIndex）：进入评分体系
+    if (!force && config.debug && article.getAttribute(PROCESSED_ATTR)) {
+      const bar = article.querySelector<HTMLElement>(`#${DEBUG_BAR_ID}`)
+      if (
+        bar?.getAttribute('data-xf-score-key') &&
+        bar.getAttribute('data-xf-debug-version') === DEBUG_BAR_VERSION &&
+        bar.getAttribute(DEBUG_CONFIG_ATTR) === debugConfigKey
+      ) {
+        injectKeywordButton(article)
+        continue
+      }
+    }
+
+    void processArticle(article, config)
+    injectKeywordButton(article)
+  }
+}
+
+export function cleanupOrphanReplacements() {
+  document.querySelectorAll<HTMLElement>('[data-xf-spam-hidden-replacement]').forEach((rep) => {
+    let next = rep.nextElementSibling
+    while (next && next.matches?.('[data-xf-spam-hidden-replacement]')) {
+      next = next.nextElementSibling
+    }
+    if (!next || !next.matches?.('article[data-testid="tweet"]') || next.getAttribute(STATE_ATTR) !== 'hidden') {
+      rep.remove()
+    }
+  })
+
+  document.querySelectorAll<HTMLElement>(`article[data-testid="tweet"][${STATE_ATTR}="hidden"]`).forEach((article) => {
+    let prev = article.previousElementSibling
+    const toRemove: HTMLElement[] = []
+    let kept = false
+    while (prev && prev.matches?.('[data-xf-spam-hidden-replacement]')) {
+      const el = prev as HTMLElement
+      prev = prev.previousElementSibling
+      if (kept) toRemove.push(el)
+      else kept = true
+    }
+    toRemove.forEach((el) => el.remove())
+  })
+}
+
+export function cleanupAllSpamArtifacts() {
+  cleanupDebugBars()
+  removeScrollStabilityStyles()
+  document.querySelectorAll<HTMLElement>('[data-xf-spam-hidden-replacement]').forEach((el) => el.remove())
+  document.querySelectorAll<HTMLElement>('.x-focus-spam-placeholder').forEach((el) => el.remove())
+  document.querySelectorAll<HTMLElement>('article[data-testid="tweet"]').forEach(resetArticleSpamState)
+  return document.querySelectorAll('article[data-testid="tweet"]').length
+}
+
+let observer: MutationObserver | null = null
+
+export function isOwnNode(node: Node): boolean {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false
+  let el: Element | null = node as Element
+  while (el) {
+    if (el.matches?.(XF_SELF_SELECTOR)) return true
+    el = el.parentElement
+  }
+  return false
+}
+
+export function isSelfMutation(records: MutationRecord[]): boolean {
+  for (const rec of records) {
+    if (rec.type === 'attributes') continue
+    for (const node of Array.from(rec.addedNodes)) {
+      if (!isOwnNode(node)) return false
+    }
+    for (const node of Array.from(rec.removedNodes)) {
+      if (!isOwnNode(node)) return false
+    }
+  }
+  return true
+}
+
+let popstateListener: (() => void) | null = null
+
+export function startSpamObserver() {
+  if (observer) return
+  installScrollStabilityStyles()
+  observer = new MutationObserver((records) => {
+    if (isSelfMutation(records)) return
+    void scheduleScan()
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
+
+  if (!popstateListener && typeof window !== 'undefined') {
+    popstateListener = () => void scheduleScan()
+    window.addEventListener('popstate', popstateListener)
+  }
+
+  void runScan()
+}
+
+export function stopSpamObserver() {
+  observer?.disconnect()
+  observer = null
+  if (popstateListener && typeof window !== 'undefined') {
+    window.removeEventListener('popstate', popstateListener)
+    popstateListener = null
+  }
+  removeScrollStabilityStyles()
+}

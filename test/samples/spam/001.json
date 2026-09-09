@@ -1,0 +1,17 @@
+{
+  "note": "典型色情引流样本：昵称带营销词 + 纯 emoji 正文（GustaveMac91181 是名字+数字，非随机用户名）",
+  "expect": {
+    "minScore": 80,
+    "category": "porn_spam",
+    "mustHit": [
+      "marketing_nickname",
+      "pure_emoji",
+      "emoji_ratio"
+    ],
+    "mustNotHit": [
+      "marketing_keyword",
+      "repeated_chars",
+      "random_username"
+    ]
+  }
+}

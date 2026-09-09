@@ -1,0 +1,104 @@
+// 从 X.com 推文 article 元素中解析出文本/昵称/handle
+// 抽到这里是为了可单测：jsdom 加载 HTML 字符串后调用即可
+
+import { isInsideQuotedTweet } from './detect-language'
+
+export * from './detect-language'
+
+export interface TweetInfo {
+  element: HTMLElement
+  text: string
+  authorHandle: string
+  authorName: string
+}
+
+const NAVIGATION_HANDLES = new Set([
+  'home',
+  'explore',
+  'notifications',
+  'messages',
+  'bookmarks',
+  'profile',
+  'i',
+  'compose',
+  'search',
+  'settings',
+])
+
+/**
+ * 收集元素的可见文本
+ * X 把 emoji 渲染成 <img alt="🌸">，textContent 会漏掉，
+ * 所以遍历时要把 img[alt] 也算进文本
+ */
+export function collectVisibleText(
+  doc: Document,
+  el: HTMLElement | null,
+): string {
+  if (!el) return ''
+  // TreeWalker.nextNode() 直接返回根的第一个子节点，不会返回根本身。
+  // 所以不需要"先 nextNode 一次跳过根"——那样会多跳过第一个子节点。
+  // 原实现这里有 bug，导致 emoji 序列和文本的首字符被吞掉。
+  const walker = doc.createTreeWalker(el, NodeFilter.SHOW_ALL, null)
+  let result = ''
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      result += node.textContent || ''
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const e = node as HTMLElement
+      if (e.tagName === 'IMG') {
+        result += e.getAttribute('alt') || ''
+      }
+    }
+  }
+  return result.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * 从推文 article 元素解析出 authorName/handle/text
+ * 解析失败时返回 null（既没文本也没昵称）
+ */
+export function extractTweetInfo(
+  doc: Document,
+  article: HTMLElement,
+): TweetInfo | null {
+  // author handle: 直接在 article 内部查找 /handle 链接，避免全局查询导致拿到错误用户，并排除引用推文卡片内的链接
+  const handleLinks = article.querySelectorAll<HTMLAnchorElement>(
+    'a[href^="/"][role="link"]',
+  )
+  let handle = ''
+  for (const a of Array.from(handleLinks)) {
+    if (isInsideQuotedTweet(a, article)) continue
+    const m = a
+      .getAttribute('href')
+      ?.match(/^\/([A-Za-z0-9_]{1,15})(?:\/|$)/)
+    if (m && m[1] && !NAVIGATION_HANDLES.has(m[1].toLowerCase())) {
+      handle = m[1]
+      break
+    }
+  }
+
+  // 获取主推文昵称（排除引用推文中的 User-Name）
+  const allUserNames = Array.from(article.querySelectorAll<HTMLElement>('[data-testid="User-Name"]'))
+  const userNameEl = allUserNames.find((el) => !isInsideQuotedTweet(el, article)) || allUserNames[0]
+  const authorName = collectVisibleText(doc, userNameEl)
+
+  // 支持普通 Tweet (`tweetText`) 以及 X 文章 Article (`twitter-article-title` / `longformRichTextComponent` / `twitterArticleRichTextView`)
+  let text = ''
+  const allTweetTexts = Array.from(article.querySelectorAll<HTMLElement>('[data-testid="tweetText"]'))
+  const textEl = allTweetTexts.find((el) => !isInsideQuotedTweet(el, article)) || allTweetTexts[0]
+  if (textEl) {
+    text = collectVisibleText(doc, textEl)
+  } else {
+    const titleEl = article.querySelector<HTMLElement>('[data-testid="twitter-article-title"]')
+    const articleBodyEl =
+      article.querySelector<HTMLElement>('[data-testid="twitterArticleRichTextView"]') ||
+      article.querySelector<HTMLElement>('[data-testid="twitterArticleReadView"]')
+    const titleText = collectVisibleText(doc, titleEl)
+    const bodyText = collectVisibleText(doc, articleBodyEl)
+    text = [titleText, bodyText].filter(Boolean).join('\n')
+  }
+
+  if (!text && !authorName) return null
+  return { element: article, text, authorHandle: handle, authorName }
+}

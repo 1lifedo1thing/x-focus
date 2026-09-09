@@ -1,0 +1,19 @@
+{
+  "note": "纯 emoji 评论 + 昵称含 2 个装饰 emoji + 非营销昵称",
+  "expect": {
+    "minScore": 55,
+    "category": "low_quality",
+    "mustHit": [
+      "pure_emoji",
+      "decorated_nickname"
+    ],
+    "mustNotHit": [
+      "emoji_ratio",
+      "marketing_nickname",
+      "short_text",
+      "random_username",
+      "marketing_keyword",
+      "repeated_chars"
+    ]
+  }
+}

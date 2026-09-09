@@ -1,0 +1,17 @@
+export const PROCESSED_ATTR = 'data-xf-spam-processed'
+export const STATE_ATTR = 'data-xf-spam-state'
+export const SCORE_ATTR = 'data-xf-spam-score'
+export const DEBUG_BAR_ID = 'x-focus-spam-debug-bar'
+export const DEBUG_BAR_VERSION = '2'
+export const DEBUG_CONFIG_ATTR = 'data-xf-config-key'
+export const DEBUG_POSITIONED_ATTR = 'data-xf-spam-debug-positioned'
+export const SCROLL_STABILITY_STYLE_ID = 'x-focus-spam-scroll-stability'
+
+export const XF_SELF_SELECTOR = [
+  '[data-xf-spam-hidden-replacement]',
+  '[data-xf-spam-debug]',
+  '[data-xf-list-dropdown]',
+  '[data-xf-kw-btn]',
+  '[data-xf-list-btn]',
+  '[data-xf-kw-panel]',
+].join(',')

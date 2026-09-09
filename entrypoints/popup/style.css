@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* X.com theme — light-dark() resolves at runtime from color-scheme */
+@theme {
+  --color-accent: #10b981;
+  --color-accent-active: #059669;
+  --color-accent-bg: #0596691a;
+  --color-accent-hover: #047857;
+  --color-accent-ring: #05966933;
+  --color-accent-track: #0596694d;
+  --color-body-bg: light-dark(#ffffff, #000000);
+  --color-card-bg: light-dark(#f2f6f6, #16181c);
+  --color-border: light-dark(#e1e8ed, #2f3336);
+  --color-secondary-text: light-dark(#536471, #71767b);
+  --color-text: light-dark(#0f1419, #e7e9ea);
+  --color-glyphs: light-dark(#0f1419, #e7e9ea);
+}
+
+html {
+  color-scheme: light dark;
+}
+
+html,
+body {
+  width: 400px;
+  min-height: 520px;
+  overflow-x: hidden;
+}
+
+body {
+  color: var(--color-text);
+  background-color: var(--color-body-bg);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  width: 400px;
+  min-height: 520px;
+  isolation: isolate;
+}

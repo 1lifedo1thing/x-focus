@@ -1,0 +1,82 @@
+import selectors from '../selectors'
+import addStyles, { removeStyles } from '../utilities/addStyles'
+import { updateArticleToc, destroyArticleToc } from '../features/article-toc'
+import { addScheduledRelativeTimes, removeScheduledPanorama } from './scheduled-time'
+
+export const changeTweetButton = (state: string | number | boolean) => {
+  if (state === 'off' || state === 'hide') {
+    addStyles('hideTweetButton', `${selectors.tweetButton} { display: none !important; }`)
+  } else {
+    removeStyles('hideTweetButton')
+  }
+}
+
+export const changeSidebarColumn = (state: string | number | boolean) => {
+  if (state === 'on' || state === 'hide') {
+    addStyles('hideSidebarColumn', '[data-testid="sidebarColumn"] { display: none !important; }')
+  } else {
+    removeStyles('hideSidebarColumn')
+  }
+}
+
+export const changeArticleToc = (state: string | number | boolean) => {
+  if (state === 'off' || state === 'hide') {
+    destroyArticleToc()
+  } else {
+    updateArticleToc(true)
+  }
+}
+
+export const changeScheduledPanorama = (state: string | number | boolean) => {
+  if (state === 'off' || state === 'hide') {
+    removeScheduledPanorama()
+  } else {
+    void addScheduledRelativeTimes('on')
+  }
+}
+
+export const changeHighlightNonFollowers = (state: string | number | boolean) => {
+  const isFollowingPage = /\/following(\/|$)/.test(window.location.pathname)
+
+  if (state === 'off' || !isFollowingPage) {
+    removeStyles('highlightNonFollowers')
+    document.querySelectorAll('.xf-non-follower-btn').forEach((el) => {
+      el.classList.remove('xf-non-follower-btn')
+    })
+    return
+  }
+
+  addStyles(
+    'highlightNonFollowers',
+    `button.xf-non-follower-btn {
+      border-color: rgb(244, 33, 46) !important;
+      background-color: transparent !important;
+    }
+    button.xf-non-follower-btn span,
+    button.xf-non-follower-btn div {
+      color: rgb(244, 33, 46) !important;
+    }
+    button.xf-non-follower-btn:hover {
+      background-color: rgba(244, 33, 46, 0.1) !important;
+      border-color: rgb(244, 33, 46) !important;
+    }`
+  )
+
+  const userCells = document.querySelectorAll('[data-testid="UserCell"]')
+  userCells.forEach((cell) => {
+    const unfollowBtn =
+      cell.querySelector('button[data-testid*="-unfollow"]') ||
+      cell.querySelector('button[aria-label*="正在关注"]') ||
+      cell.querySelector('button[aria-label*="Following"]')
+
+    if (!unfollowBtn) return
+
+    const hasFollowsYouIndicator = !!cell.querySelector('[data-testid="userFollowIndicator"]')
+    if (!hasFollowsYouIndicator) {
+      unfollowBtn.classList.add('xf-non-follower-btn')
+    } else {
+      unfollowBtn.classList.remove('xf-non-follower-btn')
+    }
+  })
+}
+

@@ -1,0 +1,62 @@
+import { describe, expect, it } from 'vitest'
+import {
+  KeyNavigationButtonsLabels,
+  KeySpamThreshold,
+  SPAM_RELEVANT_KEYS,
+  allSettingsKeys,
+  defaultPreferences,
+} from '../../storage-keys'
+import { normalizeSettings } from '../../shared/settings'
+
+describe('SPAM_RELEVANT_KEYS', () => {
+  it('includes threshold changes so visible debug bars are recalculated', () => {
+    expect(SPAM_RELEVANT_KEYS.has(KeySpamThreshold)).toBe(true)
+  })
+})
+
+describe('storage defaults', () => {
+  it('has a default value for every declared setting key and no extra defaults', () => {
+    const settingKeys = new Set<string>(allSettingsKeys)
+    const defaultKeys = Object.keys(defaultPreferences)
+
+    expect(defaultKeys.sort()).toEqual([...settingKeys].sort())
+  })
+
+  it('uses valid primitive values for every default setting', () => {
+    for (const [key, value] of Object.entries(defaultPreferences)) {
+      if (key === KeyNavigationButtonsLabels) {
+        expect(['never', 'hover', 'always']).toContain(value)
+      } else if (key === 'viralHighlightStyle') {
+        expect(['border', 'background', 'both', 'none']).toContain(value)
+      } else if (key === 'viralShowLevels') {
+        expect(String(value).split(',')).toEqual(['potential', 'viral'])
+      } else if (
+        typeof value === 'string' &&
+        key !== 'spamKeywordList' &&
+        key !== 'spamWhitelist' &&
+        key !== 'spamBlacklist' &&
+        key !== 'spamRulesEnabled' &&
+        key !== 'statRatioTargetHandle'
+      ) {
+        expect(['on', 'off']).toContain(value)
+      } else {
+        expect(['string', 'number', 'boolean']).toContain(typeof value)
+      }
+    }
+  })
+
+  it('normalizes invalid or legacy values back to typed defaults', () => {
+    const settings = normalizeSettings({
+      extensionStatus: true,
+      timelineWidth: '900',
+      navigationButtonsLabels: 'invalid',
+      spamThreshold: 'bad',
+    })
+
+    expect(settings.extensionStatus).toBe('on')
+    // 900 超出 [600,800] 滑块范围，被 clamp 到 800
+    expect(settings.timelineWidth).toBe(800)
+    expect(settings.navigationButtonsLabels).toBe(defaultPreferences.navigationButtonsLabels)
+    expect(settings.spamThreshold).toBe(defaultPreferences.spamThreshold)
+  })
+})
