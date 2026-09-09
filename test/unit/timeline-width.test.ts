@@ -108,4 +108,61 @@ describe('changeTimelineWidth', () => {
     syncAccountAnalyticsPageMarker()
     expect(document.body.hasAttribute(marker)).toBe(false)
   })
+
+  it('skips left-sidebar width compensation and resets primary margin-right when right sidebar is hidden', () => {
+    changeTimelineWidth(700, 'always', 'on')
+    const css = document.getElementById('xf-style-timelineWidth')!.textContent!
+    expect(css).not.toMatch(/header\[role="banner"\]\s*\{\s*width:/)
+    expect(css).toContain('margin-right: 0px;')
+
+    changeTimelineWidth(700, 'always', 'off')
+    const cssWithSidebar = document.getElementById('xf-style-timelineWidth')!.textContent!
+    expect(cssWithSidebar).toContain('header[role="banner"] { width: 250px !important; }')
+    expect(cssWithSidebar).toContain('margin-right: 20px;')
+  })
+})
+
+describe('changeSidebarColumn', () => {
+  let dom: JSDOM
+
+  beforeEach(() => {
+    dom = new JSDOM(
+      `<!DOCTYPE html><html><head></head><body>
+        <header role="banner"><div><div><div>Nav</div></div></div></header>
+        <main role="main">
+          <div>
+            <div>
+              <div data-testid="primaryColumn">Timeline</div>
+              <div data-testid="sidebarColumn">Sidebar</div>
+            </div>
+          </div>
+        </main>
+      </body></html>`,
+      { pretendToBeVisual: true, url: 'https://x.com/home' },
+    )
+    globalThis.document = dom.window.document
+    // @ts-expect-error jsdom window
+    globalThis.window = dom.window
+  })
+
+  afterEach(() => {
+    dom.window.close()
+  })
+
+  it('injects auto-centering styles when right sidebar is hidden', async () => {
+    const { changeSidebarColumn } = await import('../../content-scripts/options/interface')
+    changeSidebarColumn('on')
+
+    const css = document.getElementById('xf-style-hideSidebarColumn')!.textContent!
+    expect(css).toContain('[data-testid="sidebarColumn"] { display: none !important; }')
+    expect(css).toContain('header[role="banner"] > div')
+    expect(css).toContain('margin-left: 0px !important;')
+    expect(css).toContain('main[role="main"] > div:has([data-testid="primaryColumn"])')
+    expect(css).toContain('width: fit-content !important;')
+    expect(css).toContain('[data-testid="primaryColumn"]')
+    expect(css).toContain('margin-right: 0px !important;')
+
+    changeSidebarColumn('off')
+    expect(document.getElementById('xf-style-hideSidebarColumn')).toBeNull()
+  })
 })

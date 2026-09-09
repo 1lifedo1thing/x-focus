@@ -19,6 +19,7 @@ export function syncAccountAnalyticsPageMarker() {
 export const changeTimelineWidth = (
   timelineWidth: string | number | boolean,
   navigationLabels: string | number | boolean = 'never',
+  sidebarColumn: string | number | boolean = 'off',
 ) => {
   // 账号分析页（/i/account_analytics）不限制主列宽度，先同步 body 标记
   syncAccountAnalyticsPageMarker()
@@ -28,18 +29,25 @@ export const changeTimelineWidth = (
     removeStyles('timelineWidth')
     return
   }
-  // never 时左侧栏已固定 88px，不再按时间线宽度补偿侧栏
+  const isSidebarHidden = sidebarColumn === 'on' || sidebarColumn === 'hide'
+
+  // 当右侧栏隐藏时，header 与 main 自然按 1:1 flex-grow 平分剩余空间达成居中，
+  // 不再人为干预 header 宽度；主列右侧间距也置为 0；
+  // 仅在右侧栏展示且导航栏非 never 且宽度 > 600 时，按原逻辑补偿侧栏宽度。
   const sidebarWidth =
-    navigationLabels === 'never' || width <= 600
+    isSidebarHidden || navigationLabels === 'never' || width <= 600
       ? null
-      : Math.round(200 + (800 - width) / 50 * 25)
+      : Math.round(200 + ((800 - width) / 50) * 25)
+
+  const primaryMarginRight = isSidebarHidden ? '0px' : '20px'
+
   addStyles(
     'timelineWidth',
     `@media only screen and (min-width: 988px) {
       body:not([data-xf-account-analytics]) ${selectors.mainColumn} {
         width: ${width}px !important;
         max-width: ${width}px !important;
-        margin-right: 20px;
+        margin-right: ${primaryMarginRight};
       }
       ${sidebarWidth ? `${selectors.leftSidebar} { width: ${sidebarWidth}px !important; }` : ''}
       /* Column shell only — do not force width:100% on arbitrary nested divs

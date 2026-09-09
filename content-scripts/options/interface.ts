@@ -13,7 +13,30 @@ export const changeTweetButton = (state: string | number | boolean) => {
 
 export const changeSidebarColumn = (state: string | number | boolean) => {
   if (state === 'on' || state === 'hide') {
-    addStyles('hideSidebarColumn', '[data-testid="sidebarColumn"] { display: none !important; }')
+    addStyles(
+      'hideSidebarColumn',
+      `${selectors.rightSidebar} { display: none !important; }
+      @media only screen and (min-width: 988px) {
+        body:not([data-xf-account-analytics]) ${selectors.leftSidebar} > div {
+          margin-left: 0px !important;
+        }
+        body:not([data-xf-account-analytics]) ${selectors.mainWrapper} > div:has(${selectors.mainColumn}) {
+          width: fit-content !important;
+          max-width: 100% !important;
+        }
+        body:not([data-xf-account-analytics]) ${selectors.mainWrapper} > div:has(${selectors.mainColumn}) > div {
+          width: fit-content !important;
+          max-width: 100% !important;
+        }
+        body:not([data-xf-account-analytics]) ${selectors.mainWrapper} > div:has(${selectors.mainColumn}) > div > div {
+          width: fit-content !important;
+          max-width: 100% !important;
+        }
+        body:not([data-xf-account-analytics]) ${selectors.mainColumn} {
+          margin-right: 0px !important;
+        }
+      }`
+    )
   } else {
     removeStyles('hideSidebarColumn')
   }
