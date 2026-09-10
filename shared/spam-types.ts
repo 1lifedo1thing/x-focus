@@ -24,6 +24,7 @@ export type SpamRuleId =
   | 'pure_emoji'
   | 'decorated_nickname'
   | 'repeated_chars'
+  | 'mention_referral'
 
 export interface SpamRuleMeta {
   id: SpamRuleId
@@ -58,15 +59,15 @@ export const SPAM_RULES: SpamRuleMeta[] = [
   {
     id: 'random_username',
     label: '随机用户名',
-    description: '用户名匹配字母+数字随机组合模式 (例如 Jenny83922)',
+    description: '用户名匹配字母+数字随机组合模式（极高嫌疑可至 +25）',
     defaultScore: 10,
     category: 'bot',
   },
   {
     id: 'marketing_keyword',
     label: '营销词库',
-    description: '评论命中自定义营销词库（每命中 +20）',
-    defaultScore: 20,
+    description: '评论命中营销词库（首词 +35，多词累加最高 65）',
+    defaultScore: 35,
     category: 'marketing',
   },
   {
@@ -89,6 +90,13 @@ export const SPAM_RULES: SpamRuleMeta[] = [
     description: '同字符连续重复 4 次以上',
     defaultScore: 20,
     category: 'low_quality',
+  },
+  {
+    id: 'mention_referral',
+    label: '矩阵引流',
+    description: '评论包含 @账号 伴随随机防重码或表情导流',
+    defaultScore: 20,
+    category: 'porn_spam',
   },
 ]
 

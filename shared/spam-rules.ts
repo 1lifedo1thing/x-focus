@@ -30,11 +30,34 @@ function stripEmoji(text: string): string {
   return text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu, '').trim()
 }
 
+export function normalizeForSpam(text: string): string {
+  if (!text) return ''
+  return text
+    // 1. 去除 URL
+    .replace(/https?:\/\/[^\s]+/g, '')
+    // 2. 去除 @handle 以及尾部跟随的随机短码（如 "@yzjddb 0I"）
+    .replace(/@[a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9]{1,4})?/g, '')
+    // 3. 去除 emoji 和变体选择器/连接符
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}]/gu, '')
+    // 4. 去除零宽字符与不可见字符
+    .replace(/[\u200B-\u200D\uFEFF\u2060]/gu, '')
+    // 5. 去除标点符号与空白
+    .replace(/[，。！？!?,.:;…~～#^*()（）[\]【】\-_/\\|`'"“”‘’<>《》+=`\s]/g, '')
+    // 6. 去除夹杂在汉字之间或汉字开头/结尾的 1-3 位英文字母噪音（如 "X ry就比她骚" -> "就比她骚"）
+    .replace(/(?:^|(?<=[\u4e00-\u9fa5]))[a-zA-Z]{1,3}(?=[\u4e00-\u9fa5]|$)/g, '')
+    .toLowerCase()
+}
+
 function checkMarketingNickname(ctx: RuleContext): RuleHit | null {
   const meta = getRuleMeta('marketing_nickname')
-  const text = `${ctx.authorName} ${ctx.authorHandle}`.toLowerCase()
-  // 使用统一词库同时匹配昵称
-  const matched = ctx.keywords.find((kw) => kw && text.includes(kw.toLowerCase()))
+  const raw = `${ctx.authorName} ${ctx.authorHandle}`.toLowerCase()
+  const norm = normalizeForSpam(`${ctx.authorName} ${ctx.authorHandle}`)
+  const matched = ctx.keywords.find((kw) => {
+    if (!kw) return false
+    const kwLower = kw.toLowerCase()
+    const kwNorm = normalizeForSpam(kw)
+    return raw.includes(kwLower) || (kwNorm.length >= 2 && norm.includes(kwNorm))
+  })
   if (!matched) return null
   return { id: meta.id, label: `${meta.label}（"${matched}"）`, score: meta.defaultScore }
 }
@@ -98,7 +121,8 @@ function checkRandomUsername(ctx: RuleContext): RuleHit | null {
   if (h.length > 12) suspicion += 10
 
   if (suspicion >= 60) {
-    return { id: meta.id, label: meta.label, score: meta.defaultScore }
+    const score = suspicion >= 80 ? 25 : 15
+    return { id: meta.id, label: meta.label, score }
   }
   return null
 }
@@ -106,10 +130,71 @@ function checkRandomUsername(ctx: RuleContext): RuleHit | null {
 function checkMarketingKeyword(ctx: RuleContext): RuleHit | null {
   const meta = getRuleMeta('marketing_keyword')
   if (!ctx.keywords.length) return null
-  const text = ctx.text.toLowerCase()
-  const matched = ctx.keywords.find((kw) => kw && text.includes(kw.toLowerCase()))
-  if (!matched) return null
-  return { id: meta.id, label: `${meta.label}（"${matched}"）`, score: meta.defaultScore }
+
+  const rawText = ctx.text.toLowerCase()
+  const normText = normalizeForSpam(ctx.text)
+
+  const matchedKeywords: string[] = []
+  for (const kw of ctx.keywords) {
+    if (!kw) continue
+    const kwLower = kw.toLowerCase()
+    const kwNorm = normalizeForSpam(kw)
+    if (
+      rawText.includes(kwLower) ||
+      (kwNorm.length >= 2 && normText.includes(kwNorm))
+    ) {
+      if (!matchedKeywords.includes(kw)) {
+        matchedKeywords.push(kw)
+      }
+    }
+  }
+
+  if (matchedKeywords.length === 0) return null
+
+  // 基础首词给 meta.defaultScore (35分)；每额外多命中 1 个不同关键词加 15 分，最高封顶 65 分
+  const extraCount = matchedKeywords.length - 1
+  const score = Math.min(65, meta.defaultScore + extraCount * 15)
+
+  const preview =
+    matchedKeywords.length === 1
+      ? `"${matchedKeywords[0]}"`
+      : `"${matchedKeywords.slice(0, 2).join('", "')}"等${matchedKeywords.length}个`
+
+  return {
+    id: meta.id,
+    label: `${meta.label}（${preview}）`,
+    score,
+  }
+}
+
+function checkMentionReferral(ctx: RuleContext): RuleHit | null {
+  const meta = getRuleMeta('mention_referral')
+  const text = ctx.text.trim()
+  if (!text) return null
+
+  // 1. 显式引流前缀：如 "看@", "主页@", "👉@", "找@" 等
+  const directReferralPattern = /(?:看|找|戳|关注|主页|私信|👉|👇|👆|☞)\s*@([a-zA-Z0-9_]{3,20})/u
+  const dirMatch = text.match(directReferralPattern)
+  if (dirMatch) {
+    return {
+      id: meta.id,
+      label: `${meta.label}（引流 @${dirMatch[1]}）`,
+      score: meta.defaultScore,
+    }
+  }
+
+  // 2. 尾部 @账号 伴随随机防重字符或单个/少量 emoji（现代黄推矩阵特征，如 "@yzjddb 0I", "@Tuya1su 🫣😡"）
+  const tailNoisePattern = /@([a-zA-Z0-9_]{3,20})\s+([a-zA-Z0-9]{1,4}|[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]{1,4})\s*$/u
+  const tailMatch = text.match(tailNoisePattern)
+  if (tailMatch) {
+    return {
+      id: meta.id,
+      label: `${meta.label}（导流 @${tailMatch[1]}）`,
+      score: meta.defaultScore,
+    }
+  }
+
+  return null
 }
 
 function checkPureEmoji(ctx: RuleContext): RuleHit | null {
@@ -168,6 +253,7 @@ const RULE_CHECKS: Record<SpamRuleId, (ctx: RuleContext) => RuleHit | null> = {
   pure_emoji: checkPureEmoji,
   decorated_nickname: checkDecoratedNickname,
   repeated_chars: checkRepeatedChars,
+  mention_referral: checkMentionReferral,
 }
 
 function inferCategory(hits: RuleHit[]): SpamCategory {

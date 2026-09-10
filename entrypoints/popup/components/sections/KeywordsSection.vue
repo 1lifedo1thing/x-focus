@@ -2,13 +2,19 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   KeySpamKeywordList,
+  defaultSpamKeywords,
 } from '../../../../storage-keys'
 import { getStorage, setStorage } from '../../../../content-scripts/utilities/storage'
 import { parseKeywordList } from '../../../../shared/spam-rules'
+import {
+  migrateSpamStorage,
+  mergeDefaultKeywords,
+} from '../../../../shared/spam-migration'
 
 const keywords = ref('')
 const newKeyword = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
+const syncMessage = ref('')
 
 const parsedKeywords = computed(() => parseKeywordList(keywords.value))
 const keywordCount = computed(() => parsedKeywords.value.length)
@@ -20,8 +26,18 @@ const placeholderText = computed(() => {
 })
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let syncMsgTimer: ReturnType<typeof setTimeout> | null = null
+
+function showSyncMsg(msg: string) {
+  syncMessage.value = msg
+  if (syncMsgTimer) clearTimeout(syncMsgTimer)
+  syncMsgTimer = setTimeout(() => {
+    syncMessage.value = ''
+  }, 3000)
+}
 
 onMounted(async () => {
+  await migrateSpamStorage()
   const kw = await getStorage(KeySpamKeywordList)
   keywords.value = String(kw ?? '')
 })
@@ -32,6 +48,25 @@ async function updateKeywords(value: string) {
   saveTimer = setTimeout(() => {
     void setStorage({ [KeySpamKeywordList]: keywords.value })
   }, 350)
+}
+
+function syncOfficialKeywords() {
+  const currentList = [...parsedKeywords.value]
+  const { merged, added } = mergeDefaultKeywords(currentList)
+  if (added.length === 0) {
+    showSyncMsg('已包含所有最新官方词汇')
+    return
+  }
+  void updateKeywords(merged.join('\n'))
+  showSyncMsg(`已补充 ${added.length} 个最新词汇`)
+}
+
+function resetToDefaults() {
+  if (!confirm(`确定要恢复为官方默认词库（共 ${defaultSpamKeywords.length} 词）吗？\n当前自定义词汇将被重置。`)) return
+  if (saveTimer) clearTimeout(saveTimer)
+  newKeyword.value = ''
+  void updateKeywords(defaultSpamKeywords.join('\n'))
+  showSyncMsg('已重置为官方默认词库')
 }
 
 function addWord(word: string) {
@@ -106,13 +141,26 @@ function clearAll() {
       <div class="flex flex-col gap-1">
         <div class="flex items-center justify-between gap-3">
           <p class="text-[12px] font-semibold">自定义营销词库</p>
-          <span class="text-[12px] font-bold text-accent">{{ keywordCount }} 词</span>
+          <div class="flex items-center gap-2">
+            <span v-if="syncMessage" class="text-[10px] text-accent font-medium animate-pulse">{{ syncMessage }}</span>
+            <span class="text-[12px] font-bold text-accent">{{ keywordCount }} 词</span>
+          </div>
         </div>
         <div class="flex items-center justify-between gap-3">
-          <p class="text-[10px] text-secondary-text">每命中 +20。输入后按回车/逗号，或直接粘贴</p>
-          <button v-if="keywordCount > 0" type="button"
-            class="text-[10px] text-red-400 hover:text-red-500 rounded  py-0.5 transition-colors cursor-pointer"
-            @click="clearAll">清空</button>
+          <p class="text-[10px] text-secondary-text">首词 +35，多词累加最高 65。按回车添加或粘贴</p>
+          <div class="flex items-center gap-2">
+            <button type="button"
+              class="text-[10px] text-accent hover:underline rounded py-0.5 transition-colors cursor-pointer"
+              title="补充官方新词，保留现有自定义词"
+              @click="syncOfficialKeywords">补全新词</button>
+            <button type="button"
+              class="text-[10px] text-secondary-text hover:text-primary-text rounded py-0.5 transition-colors cursor-pointer"
+              title="重置为全部官方默认词库"
+              @click="resetToDefaults">重置默认</button>
+            <button v-if="keywordCount > 0" type="button"
+              class="text-[10px] text-red-400 hover:text-red-500 rounded py-0.5 transition-colors cursor-pointer"
+              @click="clearAll">清空</button>
+          </div>
         </div>
       </div>
 

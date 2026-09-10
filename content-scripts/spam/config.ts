@@ -8,6 +8,7 @@ import {
   KeySpamWhitelist,
 } from '../../storage-keys'
 import { parseEnabledRules, parseHandleList, parseKeywordList } from '../../shared/spam-rules'
+import { migrateSpamStorage } from '../../shared/spam-migration'
 import type { SpamRuleId } from '../../shared/spam-types'
 import { getStorage } from '../utilities/storage'
 import type { SpamConfig } from './types'
@@ -17,6 +18,8 @@ function handleSet(raw: string | undefined | null): Set<string> {
 }
 
 async function loadConfig(): Promise<SpamConfig | null> {
+  await migrateSpamStorage()
+
   const values = await getStorage([
     KeySpamFilterEnabled,
     KeySpamThreshold,

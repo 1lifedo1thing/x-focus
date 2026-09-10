@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { evaluateSpam, parseKeywordList, parseEnabledRules, serializeEnabledRules } from '../../shared/spam-rules'
+import {
+  evaluateSpam,
+  normalizeForSpam,
+  parseKeywordList,
+  parseEnabledRules,
+  serializeEnabledRules,
+} from '../../shared/spam-rules'
 import { SPAM_RULES } from '../../shared/spam-types'
 
 describe('evaluateSpam - marketing_nickname', () => {
@@ -269,6 +275,104 @@ describe('evaluateSpam - marketing_keyword', () => {
       keywords: [],
     })
     expect(r.hits.some((h) => h.id === 'marketing_keyword')).toBe(false)
+  })
+
+  it('scores 35 on single keyword hit', () => {
+    const r = evaluateSpam({
+      text: '比她骚的没她好看',
+      authorName: 'Alice',
+      authorHandle: 'alice',
+      keywords: ['比她骚'],
+    })
+    const hit = r.hits.find((h) => h.id === 'marketing_keyword')
+    expect(hit?.score).toBe(35)
+  })
+
+  it('accumulates score for multiple distinct keywords (35 + 15 = 50 for 2, capped at 65 for 3+)', () => {
+    const r2 = evaluateSpam({
+      text: '比她好看的没她骚 比她骚的没她好看',
+      authorName: 'Alice',
+      authorHandle: 'alice',
+      keywords: ['比她好看的没她骚', '比她骚的没她好看'],
+    })
+    const hit2 = r2.hits.find((h) => h.id === 'marketing_keyword')
+    expect(hit2?.score).toBe(50)
+
+    const r3 = evaluateSpam({
+      text: '微密圈反差就她玩得开，无门槛看主页',
+      authorName: 'Alice',
+      authorHandle: 'alice',
+      keywords: ['微密圈', '反差', '玩得开', '无门槛'],
+    })
+    const hit3 = r3.hits.find((h) => h.id === 'marketing_keyword')
+    expect(hit3?.score).toBe(65)
+  })
+
+  it('matches keyword through emoji evasion and noise letter evasion', () => {
+    const rEmoji = evaluateSpam({
+      text: '应该👆没人比她骚了吧',
+      authorName: 'Alice',
+      authorHandle: 'alice',
+      keywords: ['比她骚'],
+    })
+    expect(rEmoji.hits.some((h) => h.id === 'marketing_keyword')).toBe(true)
+
+    const rNoise = evaluateSpam({
+      text: 'X ry就比她骚',
+      authorName: 'Alice',
+      authorHandle: 'alice',
+      keywords: ['比她骚'],
+    })
+    expect(rNoise.hits.some((h) => h.id === 'marketing_keyword')).toBe(true)
+  })
+})
+
+describe('evaluateSpam - mention_referral', () => {
+  it('hits when comment ends with @handle and random noise token', () => {
+    const r = evaluateSpam({
+      text: '比她好看的没她骚 比她骚的没她好看 @yzjddb 0I',
+      authorName: 'Alice',
+      authorHandle: 'alice',
+    })
+    expect(r.hits.some((h) => h.id === 'mention_referral')).toBe(true)
+    const hit = r.hits.find((h) => h.id === 'mention_referral')
+    expect(hit?.score).toBe(20)
+  })
+
+  it('hits when comment ends with @handle and emoji token', () => {
+    const r = evaluateSpam({
+      text: '应该👆没人比她骚了吧 @Tuya1su 🫣😡',
+      authorName: 'Tuya',
+      authorHandle: 'tuya1su',
+    })
+    expect(r.hits.some((h) => h.id === 'mention_referral')).toBe(true)
+  })
+
+  it('hits on explicit referral prefixes like 看@ or 主页@', () => {
+    const r = evaluateSpam({
+      text: '更多福利看@girl_secret',
+      authorName: 'Bob',
+      authorHandle: 'bob',
+    })
+    expect(r.hits.some((h) => h.id === 'mention_referral')).toBe(true)
+  })
+
+  it('does not hit on normal natural mentions without spam pattern', () => {
+    const r = evaluateSpam({
+      text: 'Thanks for the feedback @alice!',
+      authorName: 'Bob',
+      authorHandle: 'bob',
+    })
+    expect(r.hits.some((h) => h.id === 'mention_referral')).toBe(false)
+  })
+})
+
+describe('normalizeForSpam', () => {
+  it('strips emoji, urls, mentions with noise, punctuation, and letter noise', () => {
+    expect(normalizeForSpam('比她好看的没她骚 比她骚的没她好看 @yzjddb 0I')).toBe('比她好看的没她骚比她骚的没她好看')
+    expect(normalizeForSpam('应该👆没人比她骚了吧 @Tuya1su 🫣😡')).toBe('应该没人比她骚了吧')
+    expect(normalizeForSpam('X ry就比她骚 @030999_s 0J')).toBe('就比她骚')
+    expect(normalizeForSpam('没👆我骚')).toBe('没我骚')
   })
 })
 
