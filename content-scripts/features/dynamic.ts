@@ -182,7 +182,7 @@ const flushDynamicFeatures = throttle(async () => {
     } else {
       await dynamicFeatures.sidebarButtons()
     }
-    changeTweetButton(data[KeyTweetButton] ?? 'off')
+    changeTweetButton(data[KeyTweetButton] ?? 'off', data[KeyNavigationButtonsLabels])
     dynamicFeatures.navigation(data)
   }
 }, 50)

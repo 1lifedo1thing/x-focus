@@ -167,3 +167,51 @@ describe('changeSidebarColumn', () => {
     expect(document.getElementById('xf-style-hideSidebarColumn')).toBeNull()
   })
 })
+
+describe('changeTweetButton', () => {
+  let dom: JSDOM
+
+  beforeEach(() => {
+    dom = new JSDOM(
+      `<!DOCTYPE html><html><head></head><body>
+        <header role="banner">
+          <nav role="navigation">
+            <a data-testid="SideNav_NewTweet_Button" href="/compose/post"><span>Tweet</span></a>
+          </nav>
+        </header>
+      </body></html>`,
+      { pretendToBeVisual: true, url: 'https://x.com/home' },
+    )
+    globalThis.document = dom.window.document
+    // @ts-expect-error jsdom window
+    globalThis.window = dom.window
+  })
+
+  afterEach(() => {
+    dom.window.close()
+  })
+
+  it('hides both native and custom tweet buttons with hover-overriding specificity when off', async () => {
+    const { changeTweetButton } = await import('../../content-scripts/options/interface')
+    changeTweetButton('off')
+
+    const css = document.getElementById('xf-style-hideTweetButton')!.textContent!
+    expect(css).toContain('.xf-custom-tweet-button')
+    expect(css).toContain('a[data-testid="SideNav_NewTweet_Button"]')
+    expect(css).toContain('header[role="banner"]:hover')
+    expect(css).toContain('display: none !important;')
+
+    changeTweetButton('on')
+    expect(document.getElementById('xf-style-hideTweetButton')).toBeNull()
+  })
+
+  it('restores and ensures custom tweet button when navigation labels are never or hover', async () => {
+    const { changeTweetButton } = await import('../../content-scripts/options/interface')
+    changeTweetButton('off')
+    expect(document.querySelector('.xf-custom-tweet-button')).toBeNull()
+
+    changeTweetButton('on', 'never')
+    expect(document.getElementById('xf-style-hideTweetButton')).toBeNull()
+    expect(document.querySelector('.xf-custom-tweet-button')).not.toBeNull()
+  })
+})

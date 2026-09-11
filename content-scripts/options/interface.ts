@@ -2,12 +2,38 @@ import selectors from '../selectors'
 import addStyles, { removeStyles } from '../utilities/addStyles'
 import { updateArticleToc, destroyArticleToc } from '../features/article-toc'
 import { addScheduledRelativeTimes, removeScheduledPanorama } from './scheduled-time'
+import { ensureCustomTweetButton } from './navigation'
 
-export const changeTweetButton = (state: string | number | boolean) => {
+export const changeTweetButton = (
+  state: string | number | boolean,
+  navigationLabels?: string | number | boolean,
+) => {
   if (state === 'off' || state === 'hide') {
-    addStyles('hideTweetButton', `${selectors.tweetButton} { display: none !important; }`)
+    addStyles(
+      'hideTweetButton',
+      `html body ${selectors.tweetButton},
+      html body .xf-custom-tweet-button,
+      html body header[role="banner"] ${selectors.tweetButton},
+      html body header[role="banner"] .xf-custom-tweet-button,
+      html body header[role="banner"]:hover ${selectors.tweetButton},
+      html body header[role="banner"]:hover .xf-custom-tweet-button,
+      html body header[role="banner"] nav[role="navigation"]:hover ${selectors.tweetButton},
+      html body header[role="banner"] nav[role="navigation"]:hover .xf-custom-tweet-button {
+        display: none !important;
+      }`
+    )
   } else {
     removeStyles('hideTweetButton')
+    const isNeverOrHover =
+      navigationLabels === 'never' ||
+      navigationLabels === 'hover' ||
+      (!navigationLabels && (
+        Boolean(document.getElementById('xf-style-removeLabels')) ||
+        Boolean(document.getElementById('xf-style-hideLabels'))
+      ))
+    if (isNeverOrHover) {
+      ensureCustomTweetButton()
+    }
   }
 }
 
