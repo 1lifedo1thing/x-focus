@@ -17,8 +17,13 @@ function handleSet(raw: string | undefined | null): Set<string> {
   return new Set(parseHandleList(raw))
 }
 
+let migrationChecked = false
+
 async function loadConfig(): Promise<SpamConfig | null> {
-  await migrateSpamStorage()
+  if (!migrationChecked) {
+    migrationChecked = true
+    await migrateSpamStorage()
+  }
 
   const values = await getStorage([
     KeySpamFilterEnabled,

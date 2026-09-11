@@ -44,14 +44,15 @@ describe('changeTimelineWidth', () => {
 
     const css = document.getElementById('xf-style-timelineWidth')!.textContent!
 
-    // Timeline feed: override the 600px wrapper (X .r-1ye8kvj) via :has(> section)
+    // Timeline feed: override the 600px wrapper (X .r-1ye8kvj) via :has(> section) and profile state selectors
     expect(css).toContain('div:has(> section[role="region"])')
+    expect(css).toContain('div.r-13qz1uu.r-1ye8kvj')
     expect(css).toContain('section[role="region"]')
     expect(css).toMatch(
-      /div:has\(> section\[role="region"\]\)\s*\{[^}]*max-width:\s*800px\s*!important/,
+      /div:has\(> section\[role="region"\]\)[\s\S]*?\{[^}]*max-width:\s*800px\s*!important/,
     )
     expect(css).toMatch(
-      /div:has\(> section\[role="region"\]\)\s*\{[^}]*width:\s*100%\s*!important/,
+      /div:has\(> section\[role="region"\]\)[\s\S]*?\{[^}]*width:\s*100%\s*!important/,
     )
 
     // Must not revive the old blanket depth-4 rule that broke search
