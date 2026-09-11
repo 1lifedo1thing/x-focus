@@ -34,37 +34,33 @@ const TOC_STYLES = `
   align-items: flex-end !important;
   padding: 8px 6px !important;
   cursor: pointer !important;
-  border-radius: 6px !important;
   width: 32px !important;
   min-width: 32px !important;
   max-width: 32px !important;
-  box-sizing: border-box !important;
-  background: rgba(255, 255, 255, 0.9) !important;
+  background: transparent !important;
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
-  border: 1px solid rgba(128, 128, 128, 0.16) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  border: none !important;
+  box-shadow: none !important;
   transition: all 0.2s ease !important;
 }
 
 @media (prefers-color-scheme: dark) {
   .xf-toc-minimal {
-    background: rgba(22, 24, 28, 0.9) !important;
-    border-color: rgba(255, 255, 255, 0.12) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
   }
 }
 
 body[style*="background-color: rgb(0, 0, 0)"] .xf-toc-minimal,
 body[style*="background-color: rgb(21, 32, 43)"] .xf-toc-minimal {
-  background: rgba(22, 24, 28, 0.9) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .xf-toc-minimal:hover {
-  border-color: #1d9bf0 !important;
-  box-shadow: 0 2px 10px rgba(29, 155, 240, 0.18) !important;
   transform: scale(1.05);
 }
 
