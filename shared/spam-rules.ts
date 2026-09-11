@@ -213,10 +213,12 @@ function checkDecoratedNickname(ctx: RuleContext): RuleHit | null {
   const name = ctx.authorName
   if (!name) return null
   const emojiCount = countEmoji(name)
-  if (emojiCount < 2) return null
+  // 满足 2 个以上 emoji，或者包含指向性引流装饰符号（如 👉/👇/👆/☞）
+  const hasReferralPointing = /(?:👉|👇|👆|☞)/u.test(name)
+  if (emojiCount < 2 && !hasReferralPointing) return null
   return {
     id: meta.id,
-    label: `${meta.label}（${emojiCount}个）`,
+    label: `${meta.label}（${emojiCount || 1}个）`,
     score: meta.defaultScore,
   }
 }
