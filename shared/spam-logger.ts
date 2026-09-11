@@ -2,7 +2,7 @@ import { KeySpamLog, KeySpamStats } from '../storage-keys'
 import type { DailyStats, SpamCategory, SpamLogEntry } from './spam-types'
 import { SPAM_CATEGORY_LABEL } from './spam-types'
 
-const MAX_LOG_ENTRIES = 200 // 防止 storage 过大
+const MAX_LOG_ENTRIES = 50 // 精简最近拦截日志条数（原200），减轻 storage 体积与 IPC 传输
 const STAT_RETENTION_DAYS = 30
 
 // 运行时去重 Map：同一推文 5 分钟内不重复记录
@@ -45,7 +45,7 @@ function emptyCategoryStats(): Record<SpamCategory, number> {
   }
 }
 
-export async function readLog(): Promise<SpamLogEntry[]> {
+export async function readLog(limit?: number): Promise<SpamLogEntry[]> {
   if (flushTimer) {
     clearTimeout(flushTimer)
     flushTimer = null
@@ -54,8 +54,9 @@ export async function readLog(): Promise<SpamLogEntry[]> {
   const data = await browser.storage.local.get(KeySpamLog)
   const raw = data[KeySpamLog]
   if (!Array.isArray(raw)) return []
-  return raw as SpamLogEntry[]
+  return typeof limit === 'number' ? (raw as SpamLogEntry[]).slice(0, limit) : (raw as SpamLogEntry[])
 }
+
 
 export async function readStats(): Promise<DailyStats[]> {
   if (flushTimer) {

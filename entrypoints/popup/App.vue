@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, defineAsyncComponent } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from 'reka-ui'
 import Header from './components/sections/Header.vue'
 
-// 异步按需加载各 Tab：构建时自动代码拆分（Code Splitting），大幅缩减首屏 JS 体积
-const OverviewSection = defineAsyncComponent(() => import('./components/sections/OverviewSection.vue'))
-const TimelineSection = defineAsyncComponent(() => import('./components/sections/TimelineSection.vue'))
-const ViralRadarSection = defineAsyncComponent(() => import('./components/sections/ViralRadarSection.vue'))
-const RulesSection = defineAsyncComponent(() => import('./components/sections/RulesSection.vue'))
-const KeywordsSection = defineAsyncComponent(() => import('./components/sections/KeywordsSection.vue'))
-const ListsSection = defineAsyncComponent(() => import('./components/sections/ListsSection.vue'))
-const LogSection = defineAsyncComponent(() => import('./components/sections/LogSection.vue'))
+// 同步导入各 Tab：本地扩展没有网络下载延迟（打包总体积仅百余 KB），
+// 同步导入消除 defineAsyncComponent 导致的异步挂载空白间隙与二次渲染瀑布流。
+// 下方配合 v-if="activeTab === '...'" 确保只有当前激活的 Tab 才会实例化与挂载。
+import OverviewSection from './components/sections/OverviewSection.vue'
+import TimelineSection from './components/sections/TimelineSection.vue'
+import ViralRadarSection from './components/sections/ViralRadarSection.vue'
+import RulesSection from './components/sections/RulesSection.vue'
+import KeywordsSection from './components/sections/KeywordsSection.vue'
+import ListsSection from './components/sections/ListsSection.vue'
+import LogSection from './components/sections/LogSection.vue'
 
 import { KeyPopupActiveTab } from '../../storage-keys'
 import { getStorage, setStorage } from '../../content-scripts/utilities/storage'
@@ -39,6 +41,7 @@ const getInitialTab = (): TabId => {
 }
 
 const activeTab = ref<TabId>(getInitialTab())
+
 
 onMounted(async () => {
   // 仅在 localStorage 未命中缓存时回退异步从 chrome.storage.local 读取，消除每次打开的冗余 IPC
