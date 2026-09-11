@@ -88,10 +88,15 @@ export const changeHighlightNonFollowers = (state: string | number | boolean) =>
   const isFollowingPage = /\/following(\/|$)/.test(window.location.pathname)
 
   if (state === 'off' || !isFollowingPage) {
-    removeStyles('highlightNonFollowers')
-    document.querySelectorAll('.xf-non-follower-btn').forEach((el) => {
-      el.classList.remove('xf-non-follower-btn')
-    })
+    if (document.getElementById('xf-style-highlightNonFollowers')) {
+      removeStyles('highlightNonFollowers')
+    }
+    const btns = document.querySelectorAll('.xf-non-follower-btn')
+    if (btns.length > 0) {
+      btns.forEach((el) => {
+        el.classList.remove('xf-non-follower-btn')
+      })
+    }
     return
   }
 

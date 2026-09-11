@@ -339,11 +339,22 @@ class ArticleTocManager {
   private composerElement: HTMLElement | null = null
   private composerObserver: MutationObserver | null = null
   private composerInputListener: ((e: Event) => void) | null = null
+  private titleTextareaElement: HTMLElement | null = null
   public debouncedUpdate: () => void = debounce(() => {
     void this.update()
   }, 350)
 
   public async update(forceEnabled?: boolean) {
+    // 快速前置判断：普通短推文时间线（如 /home 首页）不包含长文阅读或写作编辑器；
+    // 既无文章容器且无已挂载的目录面板时直接短路，避免主页高频滚动反复 IPC 读 storage 与遍历 DOM。
+    const hasArticleOrComposer = Boolean(
+      window.location.pathname.includes('/article') ||
+      document.querySelector('[data-testid="composer"], [data-testid="composerRichTextInputContainer"], [data-testid="twitterArticleReadView"], [data-testid="twitterArticleRichTextView"], article[data-testid="article"]')
+    )
+    if (!hasArticleOrComposer && !this.container) {
+      return
+    }
+
     let isEnabled = forceEnabled
     if (typeof isEnabled === 'undefined') {
       const stored = await getStorage(KeyArticleToc)
@@ -393,7 +404,10 @@ class ArticleTocManager {
 
       composer.addEventListener('input', this.composerInputListener, { passive: true })
       composer.addEventListener('keyup', this.composerInputListener, { passive: true })
-      titleTextarea?.addEventListener('input', this.composerInputListener, { passive: true })
+      if (titleTextarea) {
+        this.titleTextareaElement = titleTextarea
+        titleTextarea.addEventListener('input', this.composerInputListener, { passive: true })
+      }
 
       this.composerObserver = new MutationObserver(() => {
         this.debouncedUpdate()
@@ -410,11 +424,11 @@ class ArticleTocManager {
     if (this.composerElement && this.composerInputListener) {
       this.composerElement.removeEventListener('input', this.composerInputListener)
       this.composerElement.removeEventListener('keyup', this.composerInputListener)
-      const titleTextarea = document.querySelector<HTMLElement>('textarea[placeholder*="标题"], textarea[placeholder*="title"], textarea[placeholder*="Title"]')
-      titleTextarea?.removeEventListener('input', this.composerInputListener)
+      this.titleTextareaElement?.removeEventListener('input', this.composerInputListener)
     }
     this.composerElement = null
     this.composerInputListener = null
+    this.titleTextareaElement = null
   }
 
   private ensureStyles() {
