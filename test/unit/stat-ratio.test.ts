@@ -45,6 +45,10 @@ describe('stat-ratio.ts 单元测试', () => {
       const replyEl = document.createElement('button')
       replyEl.setAttribute('aria-label', '202 回复。回复')
       expect(extractCountFromElement(replyEl)).toBe(202)
+
+      const likedEl = document.createElement('button')
+      likedEl.setAttribute('aria-label', '159 喜欢次数。喜欢了')
+      expect(extractCountFromElement(likedEl)).toBe(159)
     })
   })
 
@@ -170,6 +174,38 @@ describe('stat-ratio.ts 单元测试', () => {
 
       // 自己的推文应包含徽章
       expect(myGroup.querySelectorAll('.xf-stat-ratio-badge').length).toBeGreaterThan(0)
+    })
+
+    it('为已点赞 (unlike) 和已转帖 (unretweet) 按钮正常生成数据比例徽章', () => {
+      window.history.pushState({}, '', '/creator_user')
+      document.body.innerHTML = `
+        <a href="/creator_user/followers">2,186 关注者</a>
+        <article data-testid="tweet">
+          <div data-testid="UserAvatar-Container-creator_user"></div>
+          <div data-testid="User-Name"><a href="/creator_user">@creator_user</a></div>
+          <div>
+            <div role="group" id="id__liked_tweet">
+              <button aria-label="1 回复。回复" data-testid="reply"><div class="css-146c3p1"><span>1</span></div></button>
+              <button aria-label="32 次转帖。转帖" data-testid="unretweet"><div class="css-146c3p1"><span>32</span></div></button>
+              <button aria-label="159 喜欢次数。喜欢了" data-testid="unlike"><div class="css-146c3p1"><span>159</span></div></button>
+              <a href="/creator_user/status/123/analytics" aria-label="75446 次查看"><div class="css-146c3p1"><span>7.5万</span></div></a>
+            </div>
+          </div>
+        </article>
+      `
+
+      addStatRatioBadges('creator_user')
+
+      const unlikeBtn = document.querySelector('button[data-testid="unlike"]')!
+      const unretweetBtn = document.querySelector('button[data-testid="unretweet"]')!
+
+      const unlikeBadge = unlikeBtn.querySelector('.xf-stat-ratio-badge')
+      expect(unlikeBadge).not.toBeNull()
+      expect(unlikeBadge?.querySelector('.xf-badge-text')?.textContent).toBe('优秀') // 159 / 2186 = 7.27% (优秀: 5% ~ 20%)
+
+      const unretweetBadge = unretweetBtn.querySelector('.xf-stat-ratio-badge')
+      expect(unretweetBadge).not.toBeNull()
+      expect(unretweetBadge?.querySelector('.xf-badge-text')?.textContent).toBe('普通') // 32 / 2186 = 1.46% (普通: 0.5% ~ 2%)
     })
   })
 

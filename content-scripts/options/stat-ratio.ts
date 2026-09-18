@@ -402,9 +402,9 @@ export function addStatRatioBadges(targetUsername = '*') {
         ? 'analytics'
         : testId === 'reply'
         ? 'reply'
-        : testId === 'retweet'
+        : testId === 'retweet' || testId === 'unretweet'
         ? 'retweet'
-        : testId === 'like'
+        : testId === 'like' || testId === 'unlike'
         ? 'like'
         : null
 
