@@ -33,8 +33,16 @@ function isSingleMutationSkippable(el: HTMLElement | null, t: HTMLElement | null
     if (
       el?.id?.startsWith('xf-') ||
       t?.id?.startsWith('xf-') ||
+      el?.id?.startsWith('x-focus-') ||
+      t?.id?.startsWith('x-focus-') ||
       tClass.startsWith('xf-') ||
-      elClass.startsWith('xf-')
+      elClass.startsWith('xf-') ||
+      tClass.startsWith('x-focus-') ||
+      elClass.startsWith('x-focus-') ||
+      el?.hasAttribute?.('data-xf-viral-badge') ||
+      t?.hasAttribute?.('data-xf-viral-badge') ||
+      el?.closest?.('[data-xf-viral-badge]') ||
+      t?.closest?.('[data-xf-viral-badge]')
     )
       return true
 

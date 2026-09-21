@@ -77,15 +77,18 @@ export function ensureViralRadarStyles() {
       display: none !important;
     }
 
-    /* 速度徽章：字号 / 尺寸 / 圆角对齐 .xf-stat-ratio-badge，保证并排显示时视觉一致；
+    /* 速度徽章：放置在推文顶部右侧操作区（Grok 图标左侧，若无 Grok 则在 Caret 更多按钮左侧）；
        刻意不使用 transition: all —— 该属性会在高频轮询更新下放大微小 reflow，造成「抖动」。 */
     .x-focus-velocity-badge {
       display: inline-flex;
       align-items: center;
+      align-self: center;
       justify-content: center;
+      flex-shrink: 0;
       margin-left: 2px;
-      padding: 1.5px 4px;
-      font-size: 10px;
+      margin-right: 8px;
+      padding: 3px 6px;
+      font-size: 11px;
       font-weight: 700;
       line-height: 1.2;
       border-radius: 4px;
@@ -109,6 +112,21 @@ export function ensureViralRadarStyles() {
       color: rgb(176, 24, 38);
       background: rgba(244, 33, 46, 0.16);
       animation: xf-badge-pulse 2s infinite ease-in-out;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .x-focus-velocity-badge--normal {
+        color: rgb(0, 186, 124);
+        background: rgba(0, 186, 124, 0.18);
+      }
+      .x-focus-velocity-badge--potential {
+        color: rgb(255, 122, 0);
+        background: rgba(255, 122, 0, 0.18);
+      }
+      .x-focus-velocity-badge--viral {
+        color: rgb(244, 33, 46);
+        background: rgba(244, 33, 46, 0.18);
+      }
     }
   `
   document.head.appendChild(styleEl)
@@ -138,6 +156,67 @@ function getTweetKey(article: HTMLElement): string {
   }
   const time = article.querySelector<HTMLElement>('time[datetime]')
   return time?.getAttribute('datetime') || ''
+}
+
+/**
+ * 定位推文中的 Grok 按钮
+ */
+export function findGrokButton(article: HTMLElement): HTMLElement | null {
+  const byAria = article.querySelector<HTMLElement>('button[aria-label*="Grok" i]')
+  if (byAria) return byAria
+
+  const svg = article.querySelector('button svg[viewBox="0 0 33 32"]')
+  if (svg) {
+    const btn = svg.closest('button')
+    if (btn && article.contains(btn)) return btn as HTMLElement
+  }
+  return null
+}
+
+/**
+ * 定位推文中的 Caret（更多 "..."）按钮
+ */
+export function findCaretButton(article: HTMLElement): HTMLElement | null {
+  return (
+    article.querySelector<HTMLElement>('button[data-testid="caret"]') ||
+    article.querySelector<HTMLElement>('button[aria-label="更多"]') ||
+    article.querySelector<HTMLElement>('button[aria-label="More"]') ||
+    article.querySelector<HTMLElement>('button[aria-label*="more" i]')
+  )
+}
+
+/**
+ * 寻找推文顶部右侧操作按钮区域的挂载锚点。
+ * 1. 优先定位 Grok 按钮（若有，将徽章放置在 Grok 左侧）
+ * 2. 降级：无 Grok 时，定位 Caret（更多 "..."）按钮（放置在 Caret 左侧）
+ * 3. 兜底：若有已注入的扩展按钮，放置在扩展按钮左侧；或放在右上角操作行最前
+ */
+export function getTopBadgeAnchor(article: HTMLElement): { container: HTMLElement; referenceNode: HTMLElement | null } | null {
+  // 1. 优先定位 Grok 按钮（放在 Grok 图标左侧）
+  const grokBtn = findGrokButton(article)
+  if (grokBtn && grokBtn.parentElement) {
+    return { container: grokBtn.parentElement, referenceNode: grokBtn }
+  }
+
+  // 2. 降级：无 Grok 图标时，定位 Caret（更多 "..."）按钮（放在 Caret 按钮左侧）
+  const caretBtn = findCaretButton(article)
+  if (caretBtn && caretBtn.parentElement) {
+    return { container: caretBtn.parentElement, referenceNode: caretBtn }
+  }
+
+  // 3. 兜底：寻找关键词或白名单按钮等已注入的扩展按钮左侧
+  const extBtn = article.querySelector<HTMLElement>('button[data-xf-kw-btn], button[data-xf-list-btn]')
+  if (extBtn && extBtn.parentElement) {
+    return { container: extBtn.parentElement, referenceNode: extBtn }
+  }
+
+  // 4. 再次兜底：推文右上角控制区容器行
+  const topActions = article.querySelector<HTMLElement>('.r-1kkk96v .r-18u37iz')
+  if (topActions) {
+    return { container: topActions, referenceNode: topActions.firstElementChild as HTMLElement | null }
+  }
+
+  return null
 }
 
 let cachedViralData: Record<string, string | number | boolean | undefined> | null = null
@@ -227,7 +306,17 @@ export async function runViralRadar(force = false) {
       const stamped = article.dataset.xfViralKey
       if (stamped) {
         const currentKey = getTweetKey(article)
-        if (currentKey && stamped === currentKey) return
+        if (currentKey && stamped === currentKey) {
+          const badge = article.querySelector<HTMLElement>('[data-xf-viral-badge="1"]')
+          if (badge) {
+            // 若此前无 Grok 时挂载在 Caret 处，随后异步加载出 Grok 按钮，则将徽章移至 Grok 左侧
+            const grokBtn = findGrokButton(article)
+            if (grokBtn && grokBtn.parentElement && badge.nextElementSibling !== grokBtn) {
+              grokBtn.parentElement.insertBefore(badge, grokBtn)
+            }
+            return
+          }
+        }
       }
     }
 
@@ -235,6 +324,8 @@ export async function runViralRadar(force = false) {
     const publishTime = extractTweetPublishTime(article)
 
     if (views === null || publishTime === null) {
+      const existingBadge = article.querySelector<HTMLElement>('[data-xf-viral-badge="1"]')
+      if (existingBadge) existingBadge.remove()
       return
     }
 
@@ -284,38 +375,35 @@ export async function runViralRadar(force = false) {
     }
     badgeContainer.className = `x-focus-velocity-badge x-focus-velocity-badge--${level}`
 
-    // 挂载到推文底部数据条的「观看量 / 分析」按钮（即观看量位置）。
-    // - 主页（自己 / 他人）会同时渲染 .xf-stat-ratio-badge：速度徽章紧贴其右侧；
-    // - 信息流 / 推荐推文没有 stat-ratio 徽章：直接挂在观看量按钮内。
-    // 字号 / 尺寸与 stat-ratio 徽章保持一致，视觉上像同一组。
-    const countsGroup = article.querySelector<HTMLElement>('[role="group"][id*="id__"]:only-child')
-    const analyticsBtn = countsGroup?.querySelector<HTMLElement>('a[href*="/analytics"]') || null
-
-    if (!analyticsBtn) {
-      // 该推文没有观看量入口：清理残留徽章后跳过，避免错位
+    // 挂载到推文顶部右侧按钮组的最前侧：
+    // - 优先放在 Grok 图标左侧；
+    // - 若推文没有 Grok 图标，则降级放在 Caret（更多 "..."）按钮左侧；
+    // 保证徽章在顶部始终处于最左侧的清晰视觉位置，不遮挡操作且与底部曝光分层级。
+    const anchor = getTopBadgeAnchor(article)
+    if (!anchor) {
       badgeContainer.remove()
-      // 无 analytics 入口的推文通常不会异步补出该按钮，同样标记为已处理，避免每轮空跑
-      const noBtnKey = getTweetKey(article)
-      if (noBtnKey) article.dataset.xfViralKey = noBtnKey
+      const noAnchorKey = getTweetKey(article)
+      if (noAnchorKey) article.dataset.xfViralKey = noAnchorKey
       return
     }
 
-    // 与 stat-ratio 徽章共用同一挂载容器，保证并排显示。
-    // 关键：必须落在 .css-146c3p1（行内文本节点）里，才能和观看量数字 / stat-ratio 徽章左右排布；
-    //       不能落到 app-text-transition-container 的父元素——那是 flex 列容器，会把徽章换行成上下布局。
-    const ratioBadge = analyticsBtn.querySelector<HTMLElement>('.xf-stat-ratio-badge')
-    const container: HTMLElement =
-      (ratioBadge?.parentElement as HTMLElement | undefined) ||
-      (analyticsBtn.querySelector('.css-146c3p1') as HTMLElement | null) ||
-      analyticsBtn
+    const { container, referenceNode } = anchor
 
-    // 仅在位置不正确时才移动节点，避免高频轮询下反复写入 DOM 引发的抖动
-    if (ratioBadge) {
-      if (badgeContainer.parentElement !== container || badgeContainer.previousElementSibling !== ratioBadge) {
-        ratioBadge.after(badgeContainer)
+    // 仅在位置不正确时才移动/插入节点，避免高频轮询下反复写入 DOM 引发的抖动
+    if (referenceNode) {
+      if (badgeContainer.parentElement !== container || badgeContainer.nextElementSibling !== referenceNode) {
+        container.insertBefore(badgeContainer, referenceNode)
       }
     } else if (badgeContainer.parentElement !== container) {
       container.appendChild(badgeContainer)
+    }
+
+    // 阻止点击事件冒泡，避免误触跳转推文正文
+    if (!badgeContainer.dataset.xfClickAttached) {
+      badgeContainer.dataset.xfClickAttached = '1'
+      badgeContainer.addEventListener('click', (e) => {
+        e.stopPropagation()
+      })
     }
 
     // 设置 Hover 提示 (e.g. "121,756 次浏览 · 🔥 12.5万/h")

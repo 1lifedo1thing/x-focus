@@ -14,4 +14,6 @@ export const XF_SELF_SELECTOR = [
   '[data-xf-kw-btn]',
   '[data-xf-list-btn]',
   '[data-xf-kw-panel]',
+  '[data-xf-viral-badge]',
 ].join(',')
+
