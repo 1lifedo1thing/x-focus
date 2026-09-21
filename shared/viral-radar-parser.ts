@@ -50,10 +50,69 @@ export function parseNumberWithSuffix(str: string): number | null {
 }
 
 /**
+ * 从推文底部互动操作组（role="group"）的 aria-label 提取浏览量。
+ * 例如：
+ * - 中文："3 喜欢、已喜欢、388 次观看" -> 388
+ * - 中文："33 回复、4 次转帖、50 喜欢、13 书签、7478 次观看" -> 7478
+ * - 英文："3 likes, 388 Views" -> 388
+ * - 英文："33 replies, 4 reposts, 50 likes, 13 bookmarks, 7478 views" -> 7478
+ * 这是 Twitter 官方在容器层聚合渲染的 ARIA 文本，最稳定且完全不受数字滚动动画 DOM 拼接影响。
+ */
+export function extractViewsFromGroupAria(aria: string): number | null {
+  if (!aria) return null
+  // 1. 词缀在后模式：数字在前，后跟关键词
+  // 例："388 次观看", "7478 次查看", "1.2万 次浏览", "388件の表示", "388회 조회"
+  const prefixMatch = aria.match(
+    /([\d,]+(?:\.\d+)?\s*[KMBkmb万萬亿千]?)\s*(?:次观看|次浏览|次查看|次瀏覽|次觀看|views?|件の表示|회\s*조회|vues?|visualizaciones|visualizações|mal angezeigt)/i,
+  )
+  if (prefixMatch && prefixMatch[1]) {
+    return parseNumberWithSuffix(prefixMatch[1])
+  }
+  // 2. 词缀在前模式（如部分语言 "조회 388회"）
+  const suffixMatch = aria.match(/(?:views?|조회)\s*([\d,]+(?:\.\d+)?\s*[KMBkmb万萬亿千]?)/i)
+  if (suffixMatch && suffixMatch[1]) {
+    return parseNumberWithSuffix(suffixMatch[1])
+  }
+  return null
+}
+
+/**
+ * 从可能包含 Twitter 数字滚动动画（app-text-transition-container）的元素中安全提取文本。
+ * 当数字发生变化（如从 330 变为 388）时，Twitter 的动画组件在 0.3s 动画期内会同时存在旧节点和新节点。
+ * 若直接调用父容器的 textContent 会导致文字无缝拼接（如 "330" + "388" -> "330388"）。
+ * 此函数优先提取动画容器中最新的非隐藏子节点文本，防范拼接。
+ */
+export function getSafeElementText(el: HTMLElement): string {
+  const transitionContainer = el.querySelector<HTMLElement>('[data-testid="app-text-transition-container"]')
+  if (transitionContainer) {
+    const children = Array.from(transitionContainer.children) as HTMLElement[]
+    // 过滤掉明确被标记为隐藏退场的节点
+    const activeChildren = children.filter((c) => c.getAttribute('aria-hidden') !== 'true')
+    const target = activeChildren.length > 0 ? activeChildren[activeChildren.length - 1] : children[children.length - 1]
+    if (target) {
+      const text = target.textContent?.trim()
+      if (text) return text
+    }
+  }
+  return el.textContent?.trim() || ''
+}
+
+/**
  * 从 article[data-testid="tweet"] 中提取浏览量（Impressions / Views）
  */
 export function extractTweetViews(article: HTMLElement): number | null {
-  // 查找包含 analytics / view 信息的节点
+  // 1. 优先尝试从推文底部操作组 role="group" 的 aria-label 提取
+  //    这是 Twitter 官方聚合生成的 ARIA 文本，不受前端滚动动画 DOM 拼接影响
+  const actionGroup = article.querySelector<HTMLElement>('[role="group"]')
+  if (actionGroup) {
+    const groupAria = actionGroup.getAttribute('aria-label')
+    if (groupAria) {
+      const parsed = extractViewsFromGroupAria(groupAria)
+      if (parsed !== null) return parsed
+    }
+  }
+
+  // 2. 查找包含 analytics / view 信息的节点
   const analyticsLink =
     article.querySelector<HTMLElement>('a[href*="/analytics"]') ||
     article.querySelector<HTMLElement>('[data-testid="analytics"]') ||
@@ -70,15 +129,15 @@ export function extractTweetViews(article: HTMLElement): number | null {
       if (parsed !== null) return parsed
     }
 
-    // 检查 visible text
-    const text = analyticsLink.textContent
+    // 检查 visible text（防动画拼接安全提取）
+    const text = getSafeElementText(analyticsLink)
     if (text) {
       const parsed = parseNumberWithSuffix(text)
       if (parsed !== null) return parsed
     }
   }
 
-  // 备选方案：在 article 内部查找可能显示 Views 的链接元素
+  // 3. 备选方案：在 article 内部查找可能显示 Views 的链接元素
   const statusLinks = article.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]')
   for (const link of Array.from(statusLinks)) {
     const aria = link.getAttribute('aria-label') || ''
@@ -86,7 +145,7 @@ export function extractTweetViews(article: HTMLElement): number | null {
       const parsed = parseNumberWithSuffix(aria)
       if (parsed !== null) return parsed
     }
-    const text = link.textContent || ''
+    const text = getSafeElementText(link)
     if (text.includes('View') || text.includes('view') || text.includes('浏览') || text.includes('查看')) {
       const parsed = parseNumberWithSuffix(text)
       if (parsed !== null) return parsed

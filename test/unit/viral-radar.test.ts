@@ -5,6 +5,9 @@ import {
   calculateTweetVelocity,
   classifyTweetVelocity,
   formatVelocityBadge,
+  extractViewsFromGroupAria,
+  getSafeElementText,
+  extractTweetViews,
 } from '../../shared/viral-radar-parser'
 import {
   findGrokButton,
@@ -87,6 +90,69 @@ describe('viral-radar-parser', () => {
       expect(formatVelocityBadge(6900)).toBe('6.9k/h')
       expect(formatVelocityBadge(15800)).toBe('1.6万/h')
       expect(formatVelocityBadge(127000)).toBe('12.7万/h')
+    })
+  })
+
+  describe('extractViewsFromGroupAria', () => {
+    it('extracts views from various Chinese aria-labels', () => {
+      expect(extractViewsFromGroupAria('3 喜欢、已喜欢、388 次观看')).toBe(388)
+      expect(extractViewsFromGroupAria('33 回复、4 次转帖、50 喜欢、13 书签、7478 次观看')).toBe(7478)
+      expect(extractViewsFromGroupAria('191 回复、752 次转帖、1752 喜欢、73 书签、839601 次观看')).toBe(839601)
+      expect(extractViewsFromGroupAria('12 回复、1.5万 次浏览')).toBe(15000)
+      expect(extractViewsFromGroupAria('353 次查看。查看帖子分析')).toBe(353)
+    })
+
+    it('extracts views from various English and multilingual aria-labels', () => {
+      expect(extractViewsFromGroupAria('3 likes, 388 Views')).toBe(388)
+      expect(extractViewsFromGroupAria('33 replies, 4 reposts, 50 likes, 13 bookmarks, 7478 views')).toBe(7478)
+      expect(extractViewsFromGroupAria('10 likes, 12.5K views')).toBe(12500)
+      expect(extractViewsFromGroupAria('50 likes, 1.2M views')).toBe(1200000)
+      expect(extractViewsFromGroupAria('10件のいいね、388件の表示')).toBe(388)
+      expect(extractViewsFromGroupAria('388회 조회')).toBe(388)
+    })
+
+    it('returns null when no view count exists in aria-label', () => {
+      expect(extractViewsFromGroupAria('')).toBeNull()
+      expect(extractViewsFromGroupAria('3 喜欢、0 回复')).toBeNull()
+      expect(extractViewsFromGroupAria('5 likes, 2 retweets')).toBeNull()
+    })
+  })
+
+  describe('getSafeElementText and animation concatenation prevention', () => {
+    it('prevents concatenation during 0.3s transition when old and new numbers coexist', () => {
+      const el = document.createElement('div')
+      el.innerHTML = `
+        <span data-testid="app-text-transition-container" style="transition-duration: 0.3s;">
+          <span style="transform: translateY(-100%)">
+            <span>330</span>
+          </span>
+          <span style="transform: translateY(0)">
+            <span>388</span>
+          </span>
+        </span>
+        <span>查看</span>
+      `
+      // Standard textContent would concatenate to "330388查看"
+      expect(el.textContent?.replace(/\s+/g, '')).toBe('330388查看')
+      // getSafeElementText extracts only the latest active child: "388"
+      expect(getSafeElementText(el)).toBe('388')
+    })
+
+    it('ignores aria-hidden elements in transition container', () => {
+      const el = document.createElement('div')
+      el.innerHTML = `
+        <span data-testid="app-text-transition-container">
+          <span aria-hidden="true"><span>330</span></span>
+          <span><span>388</span></span>
+        </span>
+      `
+      expect(getSafeElementText(el)).toBe('388')
+    })
+
+    it('falls back cleanly to ordinary text when no transition container exists', () => {
+      const el = document.createElement('div')
+      el.textContent = '1,234 查看'
+      expect(getSafeElementText(el)).toBe('1,234 查看')
     })
   })
 })
@@ -260,11 +326,13 @@ describe('viral-radar DOM anchors and mounting', () => {
   })
 
   describe('runViralRadar badge placement in DOM', () => {
+    const recentTime = new Date(Date.now() - 1000 * 60 * 30).toISOString() // 30 minutes ago
+
     it('places badge immediately to the left of Grok button when Grok is present', async () => {
       const tweetHtml = `
         <article data-testid="tweet">
           <a href="/user/status/123456789">Link</a>
-          <time datetime="2026-09-20T10:00:00.000Z"></time>
+          <time datetime="${recentTime}"></time>
           <div class="r-1kkk96v">
             <div class="r-18u37iz r-1wtj0ep">
               <div class="grok-wrapper r-18u37iz r-1h0z5md">
@@ -298,7 +366,7 @@ describe('viral-radar DOM anchors and mounting', () => {
       const tweetHtml = `
         <article data-testid="tweet">
           <a href="/user/status/987654321">Link</a>
-          <time datetime="2026-09-20T10:00:00.000Z"></time>
+          <time datetime="${recentTime}"></time>
           <div class="r-1kkk96v">
             <div class="r-18u37iz r-1wtj0ep">
               <div class="caret-wrapper r-18u37iz">
@@ -329,7 +397,7 @@ describe('viral-radar DOM anchors and mounting', () => {
       const tweetHtml = `
         <article data-testid="tweet">
           <a href="/user/status/555666777">Link</a>
-          <time datetime="2026-09-20T10:00:00.000Z"></time>
+          <time datetime="${recentTime}"></time>
           <div class="r-1kkk96v">
             <div class="top-row r-18u37iz r-1wtj0ep">
               <div class="caret-wrapper r-18u37iz">
@@ -374,7 +442,7 @@ describe('viral-radar DOM anchors and mounting', () => {
       const tweetHtml = `
         <article data-testid="tweet">
           <a href="/user/status/111222333">Link</a>
-          <time datetime="2026-09-20T10:00:00.000Z"></time>
+          <time datetime="${recentTime}"></time>
           <div class="caret-wrapper">
             <button data-testid="caret" type="button"></button>
           </div>
@@ -398,6 +466,34 @@ describe('viral-radar DOM anchors and mounting', () => {
       badge.dispatchEvent(event)
 
       expect(parentClicked).toBe(false)
+    })
+
+    it('correctly extracts 388 views and does not concatenate animation text on status detail tweet', async () => {
+      const detailHtml = `
+        <article data-testid="tweet">
+          <time datetime="${recentTime}"></time>
+          <div class="r-1kkk96v">
+            <button data-testid="caret" type="button">More</button>
+          </div>
+          <div>
+            <a href="/star_flow_ai/status/2101854040934277488/analytics">
+              <span data-testid="app-text-transition-container">
+                <span aria-hidden="true"><span>330</span></span>
+                <span><span>388</span></span>
+              </span>
+              <span>查看</span>
+            </a>
+          </div>
+          <div role="group" aria-label="3 喜欢、已喜欢、388 次观看">
+            <button aria-label="回复"></button>
+          </div>
+        </article>
+      `
+      document.body.innerHTML = detailHtml
+      const article = document.querySelector('article[data-testid="tweet"]') as HTMLElement
+      const views = extractTweetViews(article)
+      // Must accurately extract 388, never 330388
+      expect(views).toBe(388)
     })
   })
 })
