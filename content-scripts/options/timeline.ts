@@ -56,16 +56,20 @@ export const changeTimelineWidth = (
       body:not([data-xf-account-analytics]) ${selectors.mainColumn} > div > div {
         max-width: ${width}px !important;
       }
-      /* X caps the timeline wrapper at 600px (e.g. .r-1ye8kvj). Override that
-         parent + section so the feed fills the custom column width.
+      /* X caps the timeline wrapper and article interaction bars at 600px (e.g. .r-1ye8kvj). Override that
+         parent + section and interaction bars so the feed fills the custom column width.
          Included selectors:
          - div:has(> section[role="region"]): Standard timeline feed container
          - div.r-13qz1uu.r-1ye8kvj: Timeline wrapper on profile, home, search, bookmarks, and tweet status
          - section[role="region"]: Timeline section itself
+         - div[role="group"].r-1ye8kvj: Article top interaction bar and tweet action groups
+         - [data-testid="twitterArticleReadView"] div[role="group"]: Article interaction bars
       */
       body:not([data-xf-account-analytics]) ${selectors.mainColumn} div:has(> section[role="region"]),
       body:not([data-xf-account-analytics]) ${selectors.mainColumn} div.r-13qz1uu.r-1ye8kvj,
-      body:not([data-xf-account-analytics]) ${selectors.mainColumn} section[role="region"] {
+      body:not([data-xf-account-analytics]) ${selectors.mainColumn} section[role="region"],
+      body:not([data-xf-account-analytics]) ${selectors.mainColumn} div[role="group"].r-1ye8kvj,
+      body:not([data-xf-account-analytics]) ${selectors.mainColumn} [data-testid="twitterArticleReadView"] div[role="group"] {
         max-width: ${width}px !important;
         width: 100% !important;
       }

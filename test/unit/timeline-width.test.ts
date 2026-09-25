@@ -48,6 +48,8 @@ describe('changeTimelineWidth', () => {
     expect(css).toContain('div:has(> section[role="region"])')
     expect(css).toContain('div.r-13qz1uu.r-1ye8kvj')
     expect(css).toContain('section[role="region"]')
+    expect(css).toContain('div[role="group"].r-1ye8kvj')
+    expect(css).toContain('[data-testid="twitterArticleReadView"] div[role="group"]')
     expect(css).toMatch(
       /div:has\(> section\[role="region"\]\)[\s\S]*?\{[^}]*max-width:\s*800px\s*!important/,
     )
@@ -60,6 +62,22 @@ describe('changeTimelineWidth', () => {
 
     // Search keeps its own 95% (no matching width:100% override)
     expect(getComputedStyle(search).width).toBe('95%')
+  })
+
+  it('overrides 600px cap on article top interaction bar and action groups when timeline width is expanded', () => {
+    changeTimelineWidth(800)
+
+    const css = document.getElementById('xf-style-timelineWidth')!.textContent!
+
+    expect(css).toMatch(
+      /div\[role="group"\]\.r-1ye8kvj[\s\S]*?\{[^}]*max-width:\s*800px\s*!important/,
+    )
+    expect(css).toMatch(
+      /div\[role="group"\]\.r-1ye8kvj[\s\S]*?\{[^}]*width:\s*100%\s*!important/,
+    )
+    expect(css).toMatch(
+      /\[data-testid="twitterArticleReadView"\] div\[role="group"\][\s\S]*?\{[^}]*max-width:\s*800px\s*!important/,
+    )
   })
 
   it('skips left-sidebar width compensation when navigation labels are never', () => {
