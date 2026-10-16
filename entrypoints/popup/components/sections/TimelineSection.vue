@@ -8,13 +8,15 @@ import {
   KeyScheduledPanorama,
   KeyJumpToComments,
 } from '../../../../storage-keys'
-import { STATIC_NAV_ITEMS } from '../../../../shared/staticNavIcons'
+import { useNavIcons } from '../../composables/useNavIcons'
 import TimelineWidthSlider from '../controls/TimelineWidthSlider.vue'
 import ControlsWrapper from '../ui/ControlsWrapper.vue'
 import SectionLabel from '../ui/SectionLabel.vue'
 import Separator from '../ui/Separator.vue'
 import IconButton from '../ui/IconButton.vue'
 import ToggleGroupControl from '../ui/ToggleGroupControl.vue'
+
+const { navItems } = useNavIcons()
 
 const displayControls = [
   {
@@ -89,15 +91,18 @@ const displayControls = [
   <ControlsWrapper id="user-control-navigation" class="!rounded-xl">
    <SectionLabel>导航栏按钮</SectionLabel>
 
-   <div class="grid grid-cols-5 gap-y-2 gap-x-4 mx-auto flex-wrap">
+   <div v-if="navItems.length > 0" class="grid grid-cols-5 gap-y-2 gap-x-4 mx-auto flex-wrap">
     <IconButton
-     v-for="item in STATIC_NAV_ITEMS"
+     v-for="item in navItems"
      :key="item.storageKey"
      :storage-key="item.storageKey"
      :label="item.label"
      :icon-html="item.innerHTML"
      :view-box="item.viewBox"
     />
+   </div>
+   <div v-else class="py-3 text-center text-xs text-secondary-text">
+    打开任意 𝕏 网页即可自动同步导航
    </div>
 
    <Separator />

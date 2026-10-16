@@ -1,18 +1,15 @@
 import {
-  KeyCommunitiesButton,
-  KeyListsButton, KeyNavigationButtonsLabels,
-  KeyTopicsButton, KeyTweetButton,
-  KeyXPremiumButton,
+  KeyNavigationButtonsLabels,
+  KeyTweetButton,
   KeyStatRatioTargetHandle,
   KeyStatRatioEnabled,
   KeyHighlightNonFollowers,
   KeyScheduledPanorama,
 } from '../../storage-keys'
 import {
-  addCommunitiesButton, addListsButton,
-  addTopicsButton, addXPremiumButton,
   changeNavigationButtonsLabels,
 } from '../options/navigation'
+import { syncNavItemsToStorage } from '../utilities/navIcons'
 import {
   addMediaDownloadButtons,
   syncAccountAnalyticsPageMarker,
@@ -124,38 +121,18 @@ export const dynamicFeatures = {
   navigation: (data: Record<string, string | number | boolean | undefined>) => {
     changeNavigationButtonsLabels(data[KeyNavigationButtonsLabels] ?? 'always')
   },
-  sidebarButtons: async () => {
-    const data = await getStorage([KeyListsButton, KeyCommunitiesButton, KeyTopicsButton, KeyXPremiumButton])
-    if (!data) return
-    if (data[KeyListsButton] === 'on') addListsButton()
-    if (data[KeyCommunitiesButton] === 'on') addCommunitiesButton()
-    if (data[KeyTopicsButton] === 'on') addTopicsButton()
-    if (data[KeyXPremiumButton] === 'on') addXPremiumButton()
-  },
 }
 
 async function loadDynamicSettings(): Promise<Pick<ExtensionSettings,
   typeof KeyNavigationButtonsLabels |
-  typeof KeyTweetButton |
-  typeof KeyListsButton |
-  typeof KeyCommunitiesButton |
-  typeof KeyTopicsButton |
-  typeof KeyXPremiumButton
+  typeof KeyTweetButton
 >> {
   return await getStorage([
     KeyNavigationButtonsLabels,
     KeyTweetButton,
-    KeyListsButton,
-    KeyCommunitiesButton,
-    KeyTopicsButton,
-    KeyXPremiumButton,
   ]) as Pick<ExtensionSettings,
     typeof KeyNavigationButtonsLabels |
-    typeof KeyTweetButton |
-    typeof KeyListsButton |
-    typeof KeyCommunitiesButton |
-    typeof KeyTopicsButton |
-    typeof KeyXPremiumButton
+    typeof KeyTweetButton
   >
 }
 
@@ -176,16 +153,15 @@ const flushDynamicFeatures = throttle(async () => {
   const data = settings ?? await loadDynamicSettings()
 
   if (data) {
-    if (settings) {
-      if (data[KeyListsButton] === 'on') addListsButton()
-      if (data[KeyCommunitiesButton] === 'on') addCommunitiesButton()
-      if (data[KeyTopicsButton] === 'on') addTopicsButton()
-      if (data[KeyXPremiumButton] === 'on') addXPremiumButton()
-    } else {
-      await dynamicFeatures.sidebarButtons()
-    }
     changeTweetButton(data[KeyTweetButton] ?? 'off', data[KeyNavigationButtonsLabels])
     dynamicFeatures.navigation(data)
+
+    // 页面空闲时静默嗅探并同步最新侧栏导航项至 storage 缓存（供 Popup 0ms 秒开使用）
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      window.requestIdleCallback(() => void syncNavItemsToStorage())
+    } else {
+      setTimeout(() => void syncNavItemsToStorage(), 500)
+    }
   }
 }, 50)
 

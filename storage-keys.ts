@@ -17,6 +17,7 @@ export const KeyBookmarksButton = 'bookmarksButton'
 export const KeyJobsButton = 'jobsButton'
 export const KeyArticlesButton = 'articles'
 export const KeyProfileButton = 'profileButton'
+export const KeyCallsButton = 'callsButton'
 export const KeyCreatorStudioButton = 'creatorStudioButton'
 export const KeyMoreMenuButton = 'moreMenuButton'
 export const KeyNavigationButtonsLabels = 'navigationButtonsLabels'
@@ -26,6 +27,7 @@ export const KeyHighlightNonFollowers = 'highlightNonFollowers'
 export const KeyArticleToc = 'articleToc'
 export const KeyScheduledPanorama = 'scheduledPanorama'
 export const KeyJumpToComments = 'jumpToComments'
+export const KeyDiscoveredNavItems = 'discoveredNavItems' // 网页端静默嗅探到的最新导航项缓存
 
 // Spam filter storage keys
 export const KeySpamFilterEnabled = 'spamFilterEnabled'
@@ -74,6 +76,7 @@ export const allSettingsKeys = [
   KeyTopicsButton,
   KeyVerifiedOrgsButton,
   KeyProfileButton,
+  KeyCallsButton,
   KeyCreatorStudioButton,
   KeyMoreMenuButton,
   KeySpamFilterEnabled,
@@ -199,6 +202,7 @@ export const defaultPreferences: Record<string, string | number | boolean> = {
   [KeyTopicsButton]: 'on',
   [KeyVerifiedOrgsButton]: 'on',
   [KeyProfileButton]: 'on',
+  [KeyCallsButton]: 'on',
   [KeyCreatorStudioButton]: 'on',
   [KeyMoreMenuButton]: 'on',
   [KeySpamFilterEnabled]: 'on',

@@ -10,6 +10,7 @@ export interface DiscoveredNavItem {
   storageKey: string
   label: string
   icon: NavIcon
+  href?: string
 }
 
 export const GET_NAV_ICONS = 'GET_NAV_ICONS' as const

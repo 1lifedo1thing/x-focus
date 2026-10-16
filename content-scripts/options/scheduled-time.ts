@@ -4,6 +4,7 @@ import 'dayjs/locale/zh-cn'
 import { KeyScheduledPostsCache, KeyScheduledPanorama } from '../../storage-keys'
 import { XF_BRIDGE_MARKER, SCHEDULED_TWEETS_TYPE } from '../../shared/bridge'
 import { getStorage, setStorage } from '../utilities/storage'
+import addStyles, { removeStyles } from '../utilities/addStyles'
 
 dayjs.extend(relativeTime)
 
@@ -81,6 +82,58 @@ export function formatDurationGap(ms: number): string {
     return mins > 0 ? `${hours}小时${mins}分` : `${hours}小时`
   }
   return `${mins}分钟`
+}
+
+export interface SmartScheduleTime {
+  dateTag: string | null
+  timeStr: string
+  isToday: boolean
+}
+
+/**
+ * 智能精炼排期时间显示（剥离冗余年份噪音，聚焦当日时间与相对日期）
+ */
+export function formatSmartScheduleTime(targetDate: Date, now: Date = new Date()): SmartScheduleTime {
+  const targetDay = dayjs(targetDate)
+  const nowDay = dayjs(now)
+  const timeStr = targetDay.format('HH:mm')
+
+  if (targetDay.isSame(nowDay, 'day')) {
+    return { dateTag: null, timeStr, isToday: true }
+  }
+
+  if (targetDay.isSame(nowDay.add(1, 'day'), 'day')) {
+    return { dateTag: '明天', timeStr, isToday: false }
+  }
+
+  if (targetDay.isSame(nowDay.add(2, 'day'), 'day')) {
+    return { dateTag: '后天', timeStr, isToday: false }
+  }
+
+  const isSameYear = targetDay.isSame(nowDay, 'year')
+  const dateTag = isSameYear ? targetDay.format('MM-DD') : targetDay.format('YYYY-MM-DD')
+  return { dateTag, timeStr, isToday: false }
+}
+
+/**
+ * 格式化日期分组标签（无 emoji，极简清晰）
+ */
+export function formatDateGroupLabel(targetDate: Date, now: Date = new Date()): string {
+  const targetDay = dayjs(targetDate)
+  const nowDay = dayjs(now)
+
+  if (targetDay.isSame(nowDay, 'day')) {
+    return `今天 · ${targetDay.format('MM-DD')}`
+  }
+  if (targetDay.isSame(nowDay.add(1, 'day'), 'day')) {
+    return `明天 · ${targetDay.format('MM-DD')}`
+  }
+  if (targetDay.isSame(nowDay.add(2, 'day'), 'day')) {
+    return `后天 · ${targetDay.format('MM-DD')}`
+  }
+
+  const isSameYear = targetDay.isSame(nowDay, 'year')
+  return isSameYear ? targetDay.format('MM-DD') : targetDay.format('YYYY-MM-DD')
 }
 
 /**
@@ -351,6 +404,7 @@ export function removeScheduledPanorama() {
   document.querySelectorAll('.xf-schedule-picker-overview').forEach((el) => el.remove())
   document.querySelectorAll('.xf-modal-header-right-badge').forEach((el) => el.remove())
   document.querySelectorAll('.xf-scheduled-right-box').forEach((el) => el.remove())
+  removeStyles('scheduledPanoramaStyles')
   document.querySelectorAll('[data-testid="unsentTweet"]').forEach((card) => {
     const cardEl = card as HTMLElement
     cardEl.style.backgroundColor = ''
@@ -416,7 +470,7 @@ export async function addScheduledRelativeTimes(state?: string | number | boolea
 
           card.style.backgroundColor = theme.bg
           card.style.borderTop = `1px solid ${theme.borderColor}55`
-          card.style.borderBottom = `1px solid ${theme.borderColor}55`
+          card.style.borderBottom = ''
           card.style.transition = 'background-color 0.2s ease, border-color 0.2s ease'
 
           if (card.parentElement && card.parentElement.tagName === 'BUTTON') {
@@ -511,17 +565,109 @@ export async function addScheduledRelativeTimes(state?: string | number | boolea
 }
 
 /**
+ * 智能提取“安排表”弹窗中的年月日時分 5 个原生 select 元素
+ * 杜绝硬编码 ID（如 SELECTOR_1..5），自适应 Twitter 界面在不同生命周期下生成的动态编号（如 SELECTOR_11..15）
+ */
+export function extractSelectsFromModal(modal: Element): {
+  selYear: HTMLSelectElement | null
+  selMonth: HTMLSelectElement | null
+  selDay: HTMLSelectElement | null
+  selHour: HTMLSelectElement | null
+  selMinute: HTMLSelectElement | null
+} {
+  const selects = Array.from(modal.querySelectorAll<HTMLSelectElement>('select'))
+
+  let selYear: HTMLSelectElement | null = null
+  let selMonth: HTMLSelectElement | null = null
+  let selDay: HTMLSelectElement | null = null
+  let selHour: HTMLSelectElement | null = null
+  let selMinute: HTMLSelectElement | null = null
+
+  // 1. 优先通过关联 label 或 aria-label 精准识别每一个 select
+  for (const sel of selects) {
+    const labelId = sel.getAttribute('aria-labelledby')
+    const labelEl = labelId ? modal.querySelector(`#${labelId}`) : null
+    const text = (
+      labelEl?.textContent ||
+      sel.getAttribute('aria-label') ||
+      sel.closest('div')?.querySelector('label')?.textContent ||
+      sel.parentElement?.querySelector('label')?.textContent ||
+      ''
+    ).trim().toLowerCase()
+
+    if (text.includes('年') || text.includes('year')) {
+      selYear = sel
+    } else if (text.includes('月') || text.includes('month')) {
+      selMonth = sel
+    } else if (text.includes('日') || text.includes('day')) {
+      selDay = sel
+    } else if (text.includes('时') || text.includes('hour')) {
+      selHour = sel
+    } else if (text.includes('分') || text.includes('minute') || text.includes('min')) {
+      selMinute = sel
+    }
+  }
+
+  // 2. 若 label 无法完全匹配，通过 role="group" 或 aria-label 分组推断
+  if (!selYear || !selMonth || !selDay) {
+    const dateGroup = modal.querySelector('[aria-label*="日期"], [aria-label*="Date"], [aria-label*="date"]')
+    if (dateGroup) {
+      const dateSelects = Array.from(dateGroup.querySelectorAll<HTMLSelectElement>('select'))
+      if (dateSelects.length === 3) {
+        if (!selMonth) selMonth = dateSelects[0]
+        if (!selDay) selDay = dateSelects[1]
+        if (!selYear) selYear = dateSelects[2]
+      }
+    }
+  }
+
+  if (!selHour || !selMinute) {
+    const timeGroup = modal.querySelector('[aria-label*="时间"], [aria-label*="Time"], [aria-label*="time"]')
+    if (timeGroup) {
+      const timeSelects = Array.from(timeGroup.querySelectorAll<HTMLSelectElement>('select'))
+      if (timeSelects.length === 2) {
+        if (!selHour) selHour = timeSelects[0]
+        if (!selMinute) selMinute = timeSelects[1]
+      }
+    }
+  }
+
+  // 3. 兼容历史硬编码 ID（如部分轻量单元测试环境）
+  if (!selYear) selYear = modal.querySelector<HTMLSelectElement>('#SELECTOR_3')
+  if (!selMonth) selMonth = modal.querySelector<HTMLSelectElement>('#SELECTOR_1')
+  if (!selDay) selDay = modal.querySelector<HTMLSelectElement>('#SELECTOR_2')
+  if (!selHour) selHour = modal.querySelector<HTMLSelectElement>('#SELECTOR_4')
+  if (!selMinute) selMinute = modal.querySelector<HTMLSelectElement>('#SELECTOR_5')
+
+  // 4. 若正好有 5 个 select 且依然缺失，按标准 DOM 顺序兜底 [月, 日, 年, 时, 分]
+  if (selects.length === 5) {
+    if (!selMonth) selMonth = selects[0]
+    if (!selDay) selDay = selects[1]
+    if (!selYear) selYear = selects[2]
+    if (!selHour) selHour = selects[3]
+    if (!selMinute) selMinute = selects[4]
+  }
+
+  return { selYear, selMonth, selDay, selHour, selMinute }
+}
+
+/**
  * 解析“安排表”弹窗中当前选中的 Date
  */
 export function getPickedTimeFromModal(modal: Element): Date | null {
   try {
-    const selYear = modal.querySelector('#SELECTOR_3') as HTMLSelectElement | null
-    const selMonth = modal.querySelector('#SELECTOR_1') as HTMLSelectElement | null
-    const selDay = modal.querySelector('#SELECTOR_2') as HTMLSelectElement | null
-    const selHour = modal.querySelector('#SELECTOR_4') as HTMLSelectElement | null
-    const selMinute = modal.querySelector('#SELECTOR_5') as HTMLSelectElement | null
+    // 1. 优先从原生 select 获取当前值（用户直接操作的交互源头，实时无延迟）
+    const { selYear, selMonth, selDay, selHour, selMinute } = extractSelectsFromModal(modal)
 
-    if (selYear?.value && selMonth?.value && selDay?.value && selHour?.value !== undefined && selMinute?.value !== undefined) {
+    if (
+      selYear?.value &&
+      selMonth?.value &&
+      selDay?.value &&
+      selHour?.value !== undefined &&
+      selHour?.value !== '' &&
+      selMinute?.value !== undefined &&
+      selMinute?.value !== ''
+    ) {
       const y = parseInt(selYear.value, 10)
       const m = parseInt(selMonth.value, 10) - 1
       const d = parseInt(selDay.value, 10)
@@ -531,6 +677,7 @@ export function getPickedTimeFromModal(modal: Element): Date | null {
       if (!isNaN(dt.getTime())) return dt
     }
 
+    // 2. 备选：从原生 input[type="date"] 与 input[type="time"] 获取
     const dateInput = modal.querySelector('input[type="date"]') as HTMLInputElement | null
     const timeInput = modal.querySelector('input[type="time"]') as HTMLInputElement | null
     if (dateInput?.value && timeInput?.value) {
@@ -561,17 +708,57 @@ export async function attachSchedulePickerOverview() {
     const modals = Array.from(document.querySelectorAll('div[role="dialog"], div[aria-modal="true"]'))
     const scheduleModal = modals.find((modal) => {
       const headerText = modal.querySelector('#modal-header')?.textContent || modal.textContent || ''
-      return (headerText.includes('安排表') || headerText.includes('Schedule')) && modal.querySelector('#SELECTOR_1, #SELECTOR_4, input[type="date"]')
+      return (
+        (headerText.includes('安排表') || headerText.includes('Schedule')) &&
+        modal.querySelector('select, input[type="date"], input[type="time"]')
+      )
     }) as HTMLElement | null
 
     if (!scheduleModal) return
+    addStyles('scheduledPanoramaStyles', SCHEDULED_PANORAMA_STYLES)
 
-    // 寻找“中国标准时间”对应的容器
+    // 寻找“中国标准时间”对应的文本容器（基于语义多语言文本定位，不依赖任何哈希类名）
     const timezoneSpan = Array.from(scheduleModal.querySelectorAll('span, div')).find((el) => {
-      return el.children.length === 0 && (el.textContent?.includes('中国标准时间') || el.textContent?.includes('Standard Time') || el.textContent?.includes('时区'))
+      return (
+        el.children.length === 0 &&
+        (el.textContent?.includes('中国标准时间') ||
+          el.textContent?.includes('Standard Time') ||
+          el.textContent?.includes('时区') ||
+          el.textContent?.includes('Time zone'))
+      )
     })
 
-    const timezoneSection = (timezoneSpan?.closest('.r-7sv4c2') || timezoneSpan?.parentElement?.parentElement) as HTMLElement | null
+    let timezoneSection: HTMLElement | null = null
+    if (timezoneSpan) {
+      // 沿 DOM 树向上回溯：找到位于表单主容器下并列的时区卡片/小节（完全杜绝动态哈希类名依赖）
+      let curr: HTMLElement | null = timezoneSpan as HTMLElement | null
+      while (curr && curr.parentElement) {
+        if (curr.parentElement.querySelector('select, input[type="date"], input[type="time"]')) {
+          timezoneSection = curr
+          break
+        }
+        if (curr.parentElement === scheduleModal) {
+          timezoneSection = curr
+          break
+        }
+        curr = curr.parentElement
+      }
+      if (!timezoneSection) {
+        timezoneSection = (timezoneSpan.parentElement?.parentElement || timezoneSpan.parentElement) as HTMLElement | null
+      }
+    } else {
+      // 极端兜底：若未匹配到时区文本，定位到最后一个表单选择控件所在的小节区块之后
+      const lastInput = scheduleModal.querySelector('select:last-of-type, input[type="time"]')
+      let curr: HTMLElement | null = lastInput as HTMLElement | null
+      while (curr && curr.parentElement) {
+        if (curr.parentElement.children.length > 1 && curr.parentElement.querySelector('select, input')) {
+          timezoneSection = curr
+          break
+        }
+        curr = curr.parentElement
+      }
+    }
+
     if (!timezoneSection) return
 
     let overviewContainer = scheduleModal.querySelector('.xf-schedule-picker-overview') as HTMLElement | null
@@ -579,12 +766,49 @@ export async function attachSchedulePickerOverview() {
       overviewContainer = document.createElement('div')
       overviewContainer.className = 'xf-schedule-picker-overview'
       timezoneSection.insertAdjacentElement('afterend', overviewContainer)
+    }
 
-      // 绑定表单变动监听，实现实时变动重绘
-      const handleModalChange = () => renderSchedulePickerOverview(scheduleModal, overviewContainer!)
-      scheduleModal.querySelectorAll('select, input').forEach((input) => {
-        input.addEventListener('change', handleModalChange)
-        input.addEventListener('input', handleModalChange)
+    // 绑定事件监听与双重调度（事件捕获委托模式，避免内部元素重绘导致监听丢失）
+    if (!(scheduleModal as any).__xf_schedule_listeners_installed) {
+      ;(scheduleModal as any).__xf_schedule_listeners_installed = true
+
+      const triggerRefresh = () => {
+        const container = scheduleModal.querySelector('.xf-schedule-picker-overview') as HTMLElement | null
+        if (container) {
+          void renderSchedulePickerOverview(scheduleModal, container)
+        }
+      }
+
+      const handleModalChange = () => {
+        triggerRefresh()
+        setTimeout(triggerRefresh, 50)
+        setTimeout(triggerRefresh, 250)
+      }
+
+      scheduleModal.addEventListener('change', handleModalChange, true)
+      scheduleModal.addEventListener('input', handleModalChange, true)
+
+      let mutationDebounceTimer: any = null
+      const observer = new MutationObserver((mutations) => {
+        let hasRelevantChange = false
+        for (const mut of mutations) {
+          const target = mut.target as HTMLElement | null
+          if (target?.closest?.('.xf-schedule-picker-overview, .xf-modal-header-right-badge')) {
+            continue
+          }
+          hasRelevantChange = true
+          break
+        }
+        if (hasRelevantChange) {
+          if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer)
+          mutationDebounceTimer = setTimeout(triggerRefresh, 40)
+        }
+      })
+
+      observer.observe(scheduleModal, {
+        childList: true,
+        subtree: true,
+        characterData: true,
       })
     }
 
@@ -592,8 +816,304 @@ export async function attachSchedulePickerOverview() {
   } catch {}
 }
 
+export interface ScheduleOverviewOptions {
+  pickedDate?: Date | null
+  showGotoBtn?: boolean
+  showToggleSwitch?: boolean
+  isCollapsed?: boolean
+  maxHeight?: string
+  minHeight?: string
+  isDrawer?: boolean
+  showWarningNotice?: boolean
+}
+
+export function escapeHtml(str: string): string {
+  if (!str) return ''
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
 /**
- * 渲染“安排表”看板的核心逻辑
+ * 统一构建“排期全景”看板内容 HTML
+ */
+export function buildScheduleOverviewHtml(
+  items: PersistedScheduledItem[],
+  options: ScheduleOverviewOptions = {}
+): string {
+  const {
+    pickedDate = null,
+    showGotoBtn = true,
+    showToggleSwitch = false,
+    isCollapsed = false,
+    maxHeight,
+    minHeight,
+    isDrawer = false,
+    showWarningNotice = false,
+  } = options
+
+  const now = new Date()
+
+  // 暗黑模式检测与文本色彩自适应（兼容纯黑 Lights Out 与暗蓝 Dim）
+  const isDark =
+    typeof document !== 'undefined' &&
+    (document.body?.style?.backgroundColor?.includes('rgb(0, 0, 0)') ||
+      document.body?.style?.backgroundColor?.includes('rgb(21, 32, 43)') ||
+      (!document.body?.style?.backgroundColor?.includes('rgb(255, 255, 255)') &&
+        typeof window !== 'undefined' &&
+        window.matchMedia?.('(prefers-color-scheme: dark)')?.matches))
+
+  const primaryTextColor = isDark ? '#e7e9ea' : '#0f1419'
+  const secondaryTextColor = isDark ? '#8b98a5' : '#536471'
+  const groupDividerColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(128, 128, 128, 0.25)'
+
+  // 按自然日分组（消除单条内堆叠日期的挤压问题，零 emoji 极简呈现）
+  type NodeItem = {
+    date: Date
+    isNewPicked: boolean
+    text?: string
+    globalIdx: number
+  }
+
+  const nodes: NodeItem[] = items.map((item, idx) => ({
+    date: new Date(item.timestamp),
+    isNewPicked: false,
+    text: item.text,
+    globalIdx: idx,
+  }))
+
+  if (pickedDate) {
+    nodes.push({
+      date: pickedDate,
+      isNewPicked: true,
+      globalIdx: -1,
+    })
+  }
+
+  nodes.sort((a, b) => a.date.getTime() - b.date.getTime())
+  nodes.forEach((n, i) => {
+    n.globalIdx = i
+  })
+
+  interface DateGroup {
+    dateKey: string
+    dateLabel: string
+    items: NodeItem[]
+  }
+
+  const groups: DateGroup[] = []
+  nodes.forEach((n) => {
+    const key = dayjs(n.date).format('YYYY-MM-DD')
+    let g = groups.find((grp) => grp.dateKey === key)
+    if (!g) {
+      g = {
+        dateKey: key,
+        dateLabel: formatDateGroupLabel(n.date, now),
+        items: [],
+      }
+      groups.push(g)
+    }
+    g.items.push(n)
+  })
+
+  let timelineItemsHtml = ''
+
+  if (nodes.length === 0) {
+    timelineItemsHtml = `
+      <div style="text-align: center; padding: 24px 16px; color: #8b98a5;">
+        <div style="font-size: 13px; font-weight: 600;">暂无待发排期推文</div>
+        <div style="font-size: 11px; margin-top: 4px; opacity: 0.75;">点击“预排期”可新建并安排推文</div>
+      </div>
+    `
+  } else {
+    groups.forEach((group, gIdx) => {
+      // 跨天间隔计算
+      let crossDayGapStr = ''
+      if (gIdx > 0) {
+        const prevGroup = groups[gIdx - 1]
+        const lastNodeOfPrevGroup = prevGroup.items[prevGroup.items.length - 1]
+        const firstNodeOfCurrGroup = group.items[0]
+        const crossGapMs = firstNodeOfCurrGroup.date.getTime() - lastNodeOfPrevGroup.date.getTime()
+        crossDayGapStr = `跨夜 ${formatDurationGap(crossGapMs)}`
+      }
+
+      // 日期分组 Header（无 emoji，极简线条，天与天之间留出充足间距）
+      timelineItemsHtml += `
+        <div class="xf-schedule-group-header" style="display: flex; align-items: center; gap: 8px; margin: ${gIdx === 0 ? '4px 0 8px 0' : '8px 0 4px 0'}; font-size: 12px; font-weight: 700; color: ${secondaryTextColor};">
+          <span style="white-space: nowrap;">${group.dateLabel}</span>
+          <span style="font-size: 11px; font-weight: 500; opacity: 0.65;">(${group.items.length}条)</span>
+          <span style="flex: 1; border-top: 1px dashed ${groupDividerColor};"></span>
+          ${crossDayGapStr ? `<span style="font-size: 11px; font-weight: 500; opacity: 0.75; white-space: nowrap;">${crossDayGapStr}</span>` : ''}
+        </div>
+      `
+
+      // 组内各排期节点
+      group.items.forEach((node) => {
+        const gIdx = node.globalIdx
+        const prevNode = gIdx === 0 ? null : nodes[gIdx - 1]
+
+        // 组内节点间连线与间隔指示
+        if (gIdx > 0 && prevNode && dayjs(node.date).isSame(dayjs(prevNode.date), 'day')) {
+          const gapMs = Math.max(0, node.date.getTime() - prevNode.date.getTime())
+          const isTight = gapMs < 2 * 3600 * 1000
+          const gapStr = formatDurationGap(gapMs)
+          const lineCol = isTight ? '#f59e0b' : 'rgba(128, 128, 128, 0.28)'
+
+          timelineItemsHtml += `
+            <div style="display: flex; align-items: center; margin: 2px 0 2px 65px; font-size: 11px; line-height: 1;">
+              <svg width="2" height="14" viewBox="0 0 2 14" style="margin-right: 8px; flex-shrink: 0; display: inline-block;">
+                <line x1="1" y1="0" x2="1" y2="14" stroke="${lineCol}" stroke-width="2" stroke-dasharray="2.5 2.5" />
+              </svg>
+              <span style="color: ${isTight ? '#d97706' : '#8b98a5'}; ${isTight ? 'font-weight: 600;' : 'opacity: 0.8;'} white-space: nowrap;">
+                ${isTight ? '过密' : '间隔'} ${gapStr}
+              </span>
+            </div>
+          `
+        }
+
+        const isFirst = gIdx === 0
+        const gapFromPrevOrNow = isFirst
+          ? Math.max(0, node.date.getTime() - now.getTime())
+          : Math.max(0, node.date.getTime() - (prevNode?.date.getTime() ?? now.getTime()))
+        const theme = getIntervalTheme(isFirst, gapFromPrevOrNow)
+        const timeStr = dayjs(node.date).format('HH:mm')
+        const fullDateStr = dayjs(node.date).format('YYYY-MM-DD HH:mm')
+
+        if (node.isNewPicked) {
+          timelineItemsHtml += `
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 10px; border-radius: 6px; background: rgba(29, 155, 240, 0.1); border: 1px solid rgba(29, 155, 240, 0.35); min-height: 32px; box-sizing: border-box;">
+              <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+                <span style="width: 44px; flex-shrink: 0; font-family: monospace, sans-serif; font-size: 13px; font-weight: 700; color: rgb(29, 155, 240); text-align: right;">${timeStr}</span>
+                <span style="width: 2px; height: 14px; border-radius: 1px; background: rgb(29, 155, 240); flex-shrink: 0;"></span>
+                <span style="font-size: 12px; font-weight: 600; color: rgb(29, 155, 240); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">当前排期</span>
+              </div>
+              <span style="font-size: 11px; font-family: monospace, sans-serif; color: rgb(29, 155, 240); opacity: 0.7; white-space: nowrap; margin-left: 8px;">${fullDateStr}</span>
+            </div>
+          `
+        } else {
+          timelineItemsHtml += `
+            <div style="display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 6px; background: ${theme.bg}; border: 1px solid ${theme.borderColor}33; min-height: 32px; box-sizing: border-box; transition: background 0.15s ease;">
+              <span style="width: 44px; flex-shrink: 0; font-family: monospace, sans-serif; font-size: 13px; font-weight: 700; color: ${theme.accentColor}; text-align: right;">${timeStr}</span>
+              <span style="width: 2px; height: 14px; border-radius: 1px; background: ${theme.accentColor}; flex-shrink: 0; opacity: 0.6;"></span>
+              <span class="xf-schedule-item-text" style="flex: 1; min-width: 0; font-size: 12px; line-height: 1.4; color: ${primaryTextColor}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(node.text || '')}">
+                ${escapeHtml(node.text || '(无正文或媒体推文)')}
+              </span>
+            </div>
+          `
+        }
+      })
+    })
+  }
+
+  // “预排期”直达链接
+  const gotoBtnHtml = showGotoBtn
+    ? `
+      <a href="/compose/post/unsent/scheduled" class="xf-scheduled-goto-btn" title="直达预排期管理 (https://x.com/compose/post/unsent/scheduled)" style="display: inline-flex !important; align-items: center !important; gap: 3px !important; font-size: 13px !important; font-weight: 500 !important; color: rgb(29, 155, 240) !important; text-decoration: none !important; cursor: pointer !important; margin-left: 2px !important; transition: opacity 0.15s ease !important; user-select: none !important;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+        </svg>
+        <span>预排期</span>
+      </a>
+    `
+    : ''
+
+  // “刷新”按钮
+  const refreshBtnHtml = `
+    <button class="xf-scheduled-refresh-btn" aria-label="刷新排期" title="刷新排期列表并清理已过期推文" style="background: transparent !important; border: none !important; cursor: pointer !important; color: rgb(29, 155, 240) !important; padding: 2px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; transition: transform 0.3s ease, opacity 0.15s ease !important; user-select: none !important; margin-left: 2px !important;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+      </svg>
+    </button>
+  `
+
+  // “展开 / 收起”切换开关按钮
+  const toggleSwitchHtml = showToggleSwitch
+    ? `
+      <button class="xf-scheduled-toggle-switch" aria-label="${isCollapsed ? '展开排期全景' : '收起排期全景'}" title="${isCollapsed ? '展开排期全景' : '收起排期全景'}" style="display: inline-flex !important; align-items: center !important; gap: 4px !important; padding: 2px 8px !important; border-radius: 9999px !important; font-size: 12px !important; font-weight: 600 !important; color: rgb(29, 155, 240) !important; background: rgba(29, 155, 240, 0.12) !important; border: 1px solid rgba(29, 155, 240, 0.3) !important; cursor: pointer !important; user-select: none !important; transition: all 0.15s ease !important;">
+        <span>${isCollapsed ? '展开' : '收起'}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          ${isCollapsed
+            ? '<path d="M12 16l-6-6 1.41-1.41L12 13.17l4.59-4.58L18 10z"/>'
+            : '<path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/>'
+          }
+        </svg>
+      </button>
+    `
+    : ''
+
+  const closeBtnHtml = isDrawer
+    ? `
+      <button class="xf-scheduled-drawer-close" aria-label="关闭排期全景" style="background: transparent !important; border: none !important; cursor: pointer !important; color: var(--color-text-secondary, #536471) !important; padding: 4px !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; margin-left: 8px !important;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M10.59 12L5 6.41 6.41 5 12 10.59 17.59 5 19 6.41 13.41 12 19 17.59 17.59 19 12 13.41 6.41 19 5 17.59 10.59 12z"/>
+        </svg>
+      </button>
+    `
+    : ''
+
+  const warningNoticeHtml = showWarningNotice
+    ? '<span style="font-size: 11px; font-weight: 600; color: #d97706; white-space: nowrap;">过密警示 &lt;2h</span>'
+    : ''
+
+  return `
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: ${isCollapsed ? '0' : '4px'}; padding-bottom: ${isCollapsed ? '0' : '4px'}; ${isCollapsed ? '' : 'border-bottom: 1px solid rgba(255, 255, 255, 0.12);'}">
+      <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: rgb(29, 155, 240);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M7 4V3h2v1h6V3h2v1h1.5C19.89 4 21 5.12 21 6.5v12c0 1.38-1.11 2.5-2.5 2.5h-13C4.12 21 3 19.88 3 18.5v-12C3 5.12 4.12 4 5.5 4H7zm0 2H5.5c-.27 0-.5.22-.5.5v12c0 .28.23.5.5.5h13c.28 0 .5-.22.5-.5v-12c0-.28-.22-.5-.5-.5H17v1h-2V6H9v1H7V6z"/>
+        </svg>
+        <span>排期全景</span>
+        ${gotoBtnHtml}
+        ${refreshBtnHtml}
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        ${warningNoticeHtml}
+        <span style="font-size: 12px; font-weight: 600; color: #8b98a5; background: rgba(255, 255, 255, 0.08); padding: 3px 10px; border-radius: 12px; white-space: nowrap;">
+          共 ${items.length}${pickedDate ? ' <span style="color: rgb(29, 155, 240); font-weight: 700; background: rgba(29, 155, 240, 0.18); padding: 1px 6px; border-radius: 8px; margin: 0 2px;">+1</span>' : ''} 条
+        </span>
+        ${toggleSwitchHtml}
+        ${closeBtnHtml}
+      </div>
+    </div>
+
+    <div class="xf-scheduled-body" style="${isCollapsed ? 'display: none !important;' : ''}">
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px;${maxHeight ? ` max-height: ${maxHeight}; overflow-y: auto; padding-right: 4px;` : ''}${minHeight ? ` min-height: ${minHeight};` : ''}">
+        ${timelineItemsHtml}
+      </div>
+    </div>
+  `
+}
+
+export function bindScheduleGotoButtons(container: HTMLElement) {
+  container.querySelectorAll<HTMLAnchorElement>('.xf-scheduled-goto-btn').forEach((btn) => {
+    if ((btn as any).__xf_bound) return
+    ;(btn as any).__xf_bound = true
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      window.location.href = 'https://x.com/compose/post/unsent/scheduled'
+    })
+  })
+
+  container.querySelectorAll<HTMLButtonElement>('.xf-scheduled-refresh-btn').forEach((btn) => {
+    if ((btn as any).__xf_bound) return
+    ;(btn as any).__xf_bound = true
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      btn.style.transform = 'rotate(360deg)'
+      await prunePastScheduledPosts()
+      setTimeout(() => {
+        btn.style.transform = 'rotate(0deg)'
+      }, 350)
+    })
+  })
+}
+
+/**
+ * 渲染“安排表”弹窗看板的核心逻辑
  */
 async function renderSchedulePickerOverview(modal: HTMLElement, container: HTMLElement) {
   const pickedDate = getPickedTimeFromModal(modal)
@@ -608,7 +1128,6 @@ async function renderSchedulePickerOverview(modal: HTMLElement, container: HTMLE
   if (headerSpan && pickedDate) {
     const headerDir = (headerSpan.closest('div[dir="ltr"]') || headerSpan.parentElement) as HTMLElement
     if (headerDir) {
-      // 只设置一次：本函数会被动态循环高频调用，每次 += 会让 cssText 无限增长
       if (!headerDir.dataset.xfHeaderStyled) {
         headerDir.style.cssText += 'display: flex !important; flex-direction: row !important; justify-content: space-between !important; align-items: center !important; width: 100% !important;'
         headerDir.dataset.xfHeaderStyled = '1'
@@ -648,87 +1167,7 @@ async function renderSchedulePickerOverview(modal: HTMLElement, container: HTMLE
     }
   }
 
-  // 整理所有排期节点 (包含历史缓存 + 当前选定的拟排期)
-  interface CombinedNode {
-    date: Date
-    isNewPicked: boolean
-    text: string
-  }
-
-  const nodes: CombinedNode[] = cachedItems
-    .map((item) => ({ date: new Date(item.timestamp), isNewPicked: false, text: item.text }))
-    .filter((item) => !isNaN(item.date.getTime()))
-
-  if (pickedDate) {
-    nodes.push({
-      date: pickedDate,
-      isNewPicked: true,
-      text: '[本次拟安排推文]',
-    })
-  }
-
-  // 按时间升序排序
-  nodes.sort((a, b) => a.date.getTime() - b.date.getTime())
-
-  // 计算当前选定节点在排期队列中的索引与前后间隔
-  const pickedIndex = nodes.findIndex((n) => n.isNewPicked)
-
-  // 渲染节点列表
-  let timelineItemsHtml = ''
-  nodes.forEach((node, idx) => {
-    const isFirst = idx === 0
-    const prevNode = isFirst ? null : nodes[idx - 1]
-    const gapMs = isFirst ? Math.max(0, node.date.getTime() - now.getTime()) : Math.max(0, node.date.getTime() - (prevNode?.date.getTime() ?? now.getTime()))
-
-    const theme = getIntervalTheme(isFirst, gapMs)
-    const relTime = formatRelativePublishTime(node.date, now)
-    const gapStr = isFirst ? '' : formatDurationGap(gapMs)
-    const dateStr = dayjs(node.date).format('YYYY-MM-DD HH:mm')
-
-    // 节点间连接指示器
-    if (idx > 0) {
-      const isTight = gapMs < 2 * 3600 * 1000
-      const connectorColor = isTight ? '#d97706' : '#657786'
-      const connectorText = gapStr
-
-      timelineItemsHtml += `
-        <div style="display:flex; align-items:center; gap:6px; margin: 3px 0 3px 18px; font-size:11px; font-weight:600; color:${connectorColor};">
-          <span style="border-left: 2px dashed ${connectorColor}; height: 14px; display: inline-block;"></span>
-          <span>${connectorText}</span>
-        </div>
-      `
-    }
-
-    if (node.isNewPicked) {
-      const chipPos = `<span style="display: inline-flex !important; align-items: center !important; justify-content: center !important; height: 22px !important; box-sizing: border-box !important; background: rgba(29, 155, 240, 0.2); color: rgb(29, 155, 240); padding: 0 8px !important; border-radius: 10px; font-size: 11px; font-weight: 700; white-space: nowrap;">#${pickedIndex + 1}</span>`
-
-      timelineItemsHtml += `
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 14px; background:rgba(29,155,240,0.14); border:2px solid rgb(29,155,240); border-radius:10px; box-shadow: 0 2px 8px rgba(29,155,240,0.2);">
-          <div style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; flex:1; overflow:hidden;">
-            <span style="display: inline-flex !important; align-items: center !important; justify-content: center !important; height: 22px !important; box-sizing: border-box !important; font-size: 12px !important; font-weight: 700 !important; color: rgb(29, 155, 240) !important; background: rgba(29, 155, 240, 0.2) !important; padding: 0 8px !important; border-radius: 10px !important; border: 1px solid rgba(29, 155, 240, 0.4) !important; white-space: nowrap !important;">${relTime}</span>
-            <span style="display: inline-flex !important; align-items: center !important; justify-content: center !important; height: 22px !important; box-sizing: border-box !important; font-size: 12px !important; font-weight: 700 !important; color: #fff !important; background: rgb(29, 155, 240) !important; padding: 0 8px !important; border-radius: 10px !important; border: 1px solid rgb(29, 155, 240) !important; white-space: nowrap !important;">本次拟发</span>
-          </div>
-          <div style="display:flex; align-items:center; gap:8px; margin-left:12px; white-space:nowrap;">
-            ${chipPos}
-            <span style="display: inline-flex !important; align-items: center !important; line-height: 1 !important; font-size:12px; color:var(--color-text-secondary, #536471); font-family: monospace, sans-serif;">${dateStr}</span>
-          </div>
-        </div>
-      `
-    } else {
-      timelineItemsHtml += `
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 14px; background:${theme.bg}; border:1px solid ${theme.borderColor}55; border-radius:8px;">
-          <div style="display:flex; align-items:center; gap:10px; font-size:13px; color:var(--color-text-primary, #0f1419); flex:1; overflow:hidden;">
-            <span style="display: inline-flex !important; align-items: center !important; justify-content: center !important; line-height: 1 !important; font-size:12px; font-weight:700; color:${theme.accentColor}; background:${theme.badgeBg}; padding:3px 8px; border-radius:10px; border:1px solid ${theme.borderColor}33; white-space:nowrap;">${relTime}</span>
-            <span style="display: inline-flex !important; align-items: center !important; line-height: 1.2 !important; font-size:12px; color:var(--color-text-secondary, #536471); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">${node.text}</span>
-          </div>
-          <span style="display: inline-flex !important; align-items: center !important; line-height: 1 !important; font-size:12px; color:var(--color-text-secondary, #536471); font-family: monospace, sans-serif; white-space:nowrap; margin-left:12px;">${dateStr}</span>
-        </div>
-      `
-    }
-  })
-
   container.style.cssText = `
-    margin-top: 8px !important;
     padding: 10px 12px !important;
     background-color: transparent !important;
     border: 1px solid rgba(29, 155, 240, 0.25) !important;
@@ -737,45 +1176,47 @@ async function renderSchedulePickerOverview(modal: HTMLElement, container: HTMLE
     width: 100% !important;
   `
 
-  const html = `
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.12);">
-      <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: rgb(29, 155, 240);">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M7 4V3h2v1h6V3h2v1h1.5C19.89 4 21 5.12 21 6.5v12c0 1.38-1.11 2.5-2.5 2.5h-13C4.12 21 3 19.88 3 18.5v-12C3 5.12 4.12 4 5.5 4H7zm0 2H5.5c-.27 0-.5.22-.5.5v12c0 .28.23.5.5.5h13c.28 0 .5-.22.5-.5v-12c0-.28-.22-.5-.5-.5H17v1h-2V6H9v1H7V6z"/>
-        </svg>
-        <span>排期全景</span>
-      </div>
-      <span style="font-size: 12px; font-weight: 600; color: #8b98a5; background: rgba(255, 255, 255, 0.08); padding: 3px 10px; border-radius: 12px; white-space: nowrap;">
-        共 ${cachedItems.length}${pickedDate ? ' <span style="color: rgb(29, 155, 240); font-weight: 700; background: rgba(29, 155, 240, 0.18); padding: 1px 6px; border-radius: 8px; margin: 0 2px;">+1</span>' : ''} 条
-      </span>
-    </div>
+  const html = buildScheduleOverviewHtml(cachedItems, {
+    pickedDate,
+    showGotoBtn: false,
+    showWarningNotice: true,
+  })
 
-    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px; margin-bottom:6px; padding:0 2px;">
-      <span style="font-size:10px; color:#8b98a5; font-weight:600; margin-right:2px; white-space:nowrap;">间隔阈值</span>
-      <span style="display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:600; color:rgb(245,158,11); white-space:nowrap;">
-        <span style="width:7px; height:7px; border-radius:50%; background:rgb(245,158,11); display:inline-block; flex-shrink:0;"></span>过密 &lt;2h
-      </span>
-      <span style="color:#ccc; font-size:10px; line-height:1;">·</span>
-      <span style="display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:600; color:rgb(59,130,246); white-space:nowrap;">
-        <span style="width:7px; height:7px; border-radius:50%; background:rgb(59,130,246); display:inline-block; flex-shrink:0;"></span>正常 2–8h
-      </span>
-      <span style="color:#ccc; font-size:10px; line-height:1;">·</span>
-      <span style="display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:600; color:rgb(99,102,241); white-space:nowrap;">
-        <span style="width:7px; height:7px; border-radius:50%; background:rgb(99,102,241); display:inline-block; flex-shrink:0;"></span>跨夜 8–24h
-      </span>
-      <span style="color:#ccc; font-size:10px; line-height:1;">·</span>
-      <span style="display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:600; color:rgb(168,85,247); white-space:nowrap;">
-        <span style="width:7px; height:7px; border-radius:50%; background:rgb(168,85,247); display:inline-block; flex-shrink:0;"></span>跨日 ≥24h
-      </span>
-    </div>
-
-    <div style="display: flex; flex-direction: column; gap: 4px; max-height: 360px; min-height: 160px; overflow-y: auto; padding-right: 4px;">
-      ${timelineItemsHtml}
-    </div>
-  `
-
-  // 内容未变则跳过重绘：本函数由动态循环高频调用，无脑重建 innerHTML 会闪烁、且无法选中复制
   if (container.dataset.xfOverviewSig === html) return
   container.innerHTML = html
   container.dataset.xfOverviewSig = html
+  bindScheduleGotoButtons(container)
 }
+
+const SCHEDULED_PANORAMA_STYLES = `
+/* 排期看板推文正文文本与分组标题 - 深度暗黑模式适配 */
+.xf-schedule-item-text {
+  color: #0f1419 !important;
+}
+
+body[style*="background-color: rgb(0, 0, 0)"] .xf-schedule-item-text,
+body[style*="background-color: rgb(21, 32, 43)"] .xf-schedule-item-text {
+  color: #e7e9ea !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([style*="background-color: rgb(255, 255, 255)"]) .xf-schedule-item-text {
+    color: #e7e9ea !important;
+  }
+}
+
+.xf-schedule-group-header {
+  color: #536471 !important;
+}
+
+body[style*="background-color: rgb(0, 0, 0)"] .xf-schedule-group-header,
+body[style*="background-color: rgb(21, 32, 43)"] .xf-schedule-group-header {
+  color: #8b98a5 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([style*="background-color: rgb(255, 255, 255)"]) .xf-schedule-group-header {
+    color: #8b98a5 !important;
+  }
+}
+`
