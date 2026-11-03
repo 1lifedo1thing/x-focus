@@ -42,6 +42,8 @@ import {
   KeyArticleToc,
   KeyScheduledPanorama,
   KeyJumpToComments,
+  KeyBookmarkCount,
+  KeyMediaDownloadEnabled,
   allSettingsKeys,
   defaultPreferences,
 } from '../storage-keys'
@@ -95,6 +97,8 @@ export interface ExtensionSettings {
   [KeyArticleToc]: ToggleValue
   [KeyScheduledPanorama]: ToggleValue
   [KeyJumpToComments]: ToggleValue
+  [KeyBookmarkCount]: ToggleValue
+  [KeyMediaDownloadEnabled]: ToggleValue
 }
 
 export type SettingsPatch = Partial<Record<keyof ExtensionSettings, unknown>>
@@ -131,6 +135,8 @@ const TOGGLE_KEYS = new Set<string>([
   KeyArticleToc,
   KeyScheduledPanorama,
   KeyJumpToComments,
+  KeyBookmarkCount,
+  KeyMediaDownloadEnabled,
 ])
 
 function normalizeToggle(value: unknown, fallback: ToggleValue): ToggleValue {

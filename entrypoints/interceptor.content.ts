@@ -13,13 +13,29 @@
  * 注意：MAIN world 无法直接访问 browser.storage，排期走 window.postMessage，
  * 由 isolated world 的监听器（initialize.ts 注册）落库。
  */
-import { XF_BRIDGE_MARKER, SCHEDULED_TWEETS_TYPE } from '../shared/bridge'
+import { XF_BRIDGE_MARKER, SCHEDULED_TWEETS_TYPE, BOOKMARK_METRICS_TYPE } from '../shared/bridge'
+import { isTweetOrArticleUrl, extractBookmarkMetrics } from '../shared/bookmark-interceptor'
+import { harvestAllTweetMediaFromGraphql } from '../shared/tweet-media'
 
 export default defineContentScript({
   matches: ['https://twitter.com/*', 'https://mobile.twitter.com/*', 'https://x.com/*'],
   world: 'MAIN',
   runAt: 'document_start',
   main() {
+    // 全局防崩溃兜底：防止 Twitter 内部非核心接口（如 429 限流）
+    // 抛出未捕获的 ApiError 导致整个 React 视图崩溃白屏
+    window.addEventListener('unhandledrejection', (event) => {
+      try {
+        const reason = event.reason
+        const msg = String(reason?.message || reason || '')
+        const isApi429 = msg.includes('429') || reason?.status === 429 || (reason?.name === 'ApiError' && String(reason).includes('429'))
+        if (isApi429) {
+          event.preventDefault()
+          debug('已拦截并抑制未捕获 ApiError 429 限流错误，保障页面视图正常展示')
+        }
+      } catch {}
+    })
+
     // 扩展总开关：MAIN world 无法读 storage，由 isolated world 通过 postMessage 通知。
     // 默认 true 兼容现有行为（document_start 时还不知道开关状态）；收到关闭通知后停用拦截。
     let interceptEnabled = true
@@ -177,6 +193,70 @@ export default defineContentScript({
       }
     }
 
+    const BOOKMARK_METRICS_KEY = 'xf_bookmark_metrics_last'
+    const bookmarkMetricsCache: Record<string, number> = {}
+
+    function handleBookmarks(data: unknown) {
+      try {
+        const metrics = extractBookmarkMetrics(data)
+        const entries = Object.entries(metrics)
+        if (entries.length === 0) return
+
+        let updated = false
+        for (const [id, count] of entries) {
+          if (bookmarkMetricsCache[id] !== count) {
+            bookmarkMetricsCache[id] = count
+            updated = true
+          }
+        }
+
+        if (!updated) return
+
+        try {
+          sessionStorage.setItem(BOOKMARK_METRICS_KEY, JSON.stringify(bookmarkMetricsCache))
+        } catch {
+          // ignore
+        }
+
+        window.postMessage(
+          { type: BOOKMARK_METRICS_TYPE, payload: metrics, __xf: XF_BRIDGE_MARKER },
+          '*',
+        )
+        debug('已广播书签指标', entries.length, '条', metrics)
+      } catch (e) {
+        debug('书签解析/发送失败', e)
+      }
+    }
+
+    // ---------- 推文媒体拦截与缓存 ----------
+    const MAX_SESSION_MEDIA = 50
+    const sessionMediaKeys: string[] = []
+
+    function handleMediaInterception(data: unknown, _url?: string) {
+      try {
+        const mediaList = harvestAllTweetMediaFromGraphql(data)
+        if (mediaList && mediaList.length > 0) {
+          for (const item of mediaList) {
+            if (item.tweetId) {
+              const k = `xf_media_${item.tweetId}`
+              try {
+                sessionStorage.setItem(k, JSON.stringify(item))
+                sessionMediaKeys.push(k)
+                while (sessionMediaKeys.length > MAX_SESSION_MEDIA) {
+                  const oldKey = sessionMediaKeys.shift()
+                  if (oldKey) {
+                    try {
+                      sessionStorage.removeItem(oldKey)
+                    } catch {}
+                  }
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch {}
+    }
+
     function route(url: string, data: unknown) {
       if (!data) return
       // 排期：URL 命中后仍由 extractScheduledItems 做结构校验，非排期响应自然落空
@@ -199,6 +279,15 @@ export default defineContentScript({
           cloned
             .json()
             .then((data) => route(url, data))
+            .catch(() => {})
+        } else if (isTweetOrArticleUrl(url)) {
+          const cloned = response.clone()
+          cloned
+            .json()
+            .then((data) => {
+              handleBookmarks(data)
+              handleMediaInterception(data, url)
+            })
             .catch(() => {})
         }
       } catch {
@@ -234,8 +323,16 @@ export default defineContentScript({
         xhr.__xfHooked = true
         this.addEventListener('load', function (this: XMLHttpRequest) {
           if (!interceptEnabled) return
+          if (this.status < 200 || this.status >= 300) return
           try {
             const url = (this as XMLHttpRequest & { __xfUrl?: string }).__xfUrl || ''
+            if (isTweetOrArticleUrl(url) && this.responseText) {
+              try {
+                const parsed = JSON.parse(this.responseText)
+                handleBookmarks(parsed)
+                handleMediaInterception(parsed, url)
+              } catch {}
+            }
             if (!isScheduledUrl(url) || !this.responseText) return
             route(url, JSON.parse(this.responseText))
           } catch {

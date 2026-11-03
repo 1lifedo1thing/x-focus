@@ -1,5 +1,6 @@
 import { showListDropdown } from './list-dropdown'
 import { showPickerPanel } from './picker-panel'
+import { createCopyTweetButton } from '../../features/copy-tweet'
 
 // ─── 状态 ──────────────────────────────────────────
 
@@ -57,6 +58,10 @@ export function injectKeywordButton(article: HTMLElement) {
   })
 
   anchorBtn.insertAdjacentElement('afterend', btn)
+
+  // ── 复制推文按钮（位于“添加到营销词库”图标左边） ──
+  const copyBtn = createCopyTweetButton(article)
+  btn.insertAdjacentElement('beforebegin', copyBtn)
 
   // ── 白/黑名单快捷按钮 ──
   const listBtn = document.createElement('button')

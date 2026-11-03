@@ -13,7 +13,11 @@ import {
   KeyArticleToc,
   KeyScheduledPanorama,
   KeyJumpToComments,
+  KeyBookmarkCount,
+  KeyMediaDownloadEnabled,
 } from '../../storage-keys'
+import { setBookmarkCountEnabled } from './bookmark-counter'
+import { injectMediaHoverButtons, removeMediaHoverButtons } from './tweet-media-download'
 import {
   changeTweetButton,
   changeSidebarColumn,
@@ -49,6 +53,12 @@ export const staticFeatures: Record<string, (data: FeatureData) => void> = {
     changeArticleToc(data[KeyArticleToc])
     changeScheduledPanorama(data[KeyScheduledPanorama])
     changeJumpToComments(data[KeyJumpToComments])
+    setBookmarkCountEnabled(data[KeyBookmarkCount] !== 'off')
+    if (data[KeyMediaDownloadEnabled] === 'off') {
+      removeMediaHoverButtons()
+    } else if (data[KeyMediaDownloadEnabled] !== undefined) {
+      void injectMediaHoverButtons()
+    }
   },
   navigation: (data) => {
     changeNavigationButtonsLabels(data[KeyNavigationButtonsLabels])
@@ -86,6 +96,8 @@ const TIMELINE_KEYS = new Set<SettingKey>([
   KeyArticleToc,
   KeyScheduledPanorama,
   KeyJumpToComments,
+  KeyBookmarkCount,
+  KeyMediaDownloadEnabled,
 ])
 
 const NAVIGATION_KEYS = new Set<SettingKey>([KeyNavigationButtonsLabels])

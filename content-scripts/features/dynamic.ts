@@ -27,6 +27,7 @@ import { runViralRadar } from './viral-radar'
 import { injectKeywordButton } from '../spam/keyword-picker'
 import { updateArticleToc } from './article-toc'
 import { updateJumpToComments } from './jump-to-comments'
+import { updateBookmarkCounters } from './bookmark-counter'
 
 export type DynamicFeatureScope = 'tweet' | 'composer' | 'scheduled' | 'navigation' | 'all'
 
@@ -78,6 +79,7 @@ export const dynamicFeatures = {
 
         if (includesScope(scopes, 'tweet')) {
           addMediaDownloadButtons()
+          updateBookmarkCounters()
           // 推文操作按钮（选词/名单）独立于 spam 过滤器生命周期注入：
           // dynamic observer 总是运行，即使用户关闭净化，新推文上仍会出现这些按钮。
           // injectKeywordButton 自身幂等（KW_BTN_ATTR 标记），与 scanner 内的调用不冲突。

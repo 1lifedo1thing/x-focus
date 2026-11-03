@@ -8,6 +8,8 @@ import isMutationSkippable from './utilities/isMutationSkippable'
 import { getSettings } from './utilities/storage'
 import { attachPrecomposeUrlCapture, savePrecomposeUrl } from './options/precompose'
 import { listenForScheduledTweetsApi } from './options/scheduled-time'
+import { listenForBookmarkMetricsApi } from './features/bookmark-counter'
+import { trackShareButtonClick, injectMediaHoverButtons } from './features/tweet-media-download'
 
 function addStylesheets() {
   addStyleSheet('main', browser.runtime.getURL('css/main.css' as any))
@@ -77,6 +79,9 @@ export async function initializeExtension() {
   // 数据监听必须最先注册：排期数据不依赖任何 DOM 操作，
   // 后续静态/动态特性即使抛错也不能影响数据持久化链路。
   listenForScheduledTweetsApi()
+  listenForBookmarkMetricsApi()
+  trackShareButtonClick()
+  void injectMediaHoverButtons()
 
   const settings = await getSettings()
 

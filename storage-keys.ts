@@ -27,6 +27,8 @@ export const KeyHighlightNonFollowers = 'highlightNonFollowers'
 export const KeyArticleToc = 'articleToc'
 export const KeyScheduledPanorama = 'scheduledPanorama'
 export const KeyJumpToComments = 'jumpToComments'
+export const KeyBookmarkCount = 'bookmarkCount'
+export const KeyMediaDownloadEnabled = 'mediaDownloadEnabled'
 export const KeyDiscoveredNavItems = 'discoveredNavItems' // 网页端静默嗅探到的最新导航项缓存
 
 // Spam filter storage keys
@@ -101,6 +103,8 @@ export const allSettingsKeys = [
   KeyArticleToc,
   KeyScheduledPanorama,
   KeyJumpToComments,
+  KeyBookmarkCount,
+  KeyMediaDownloadEnabled,
 ] as const
 
 export type SettingKey = (typeof allSettingsKeys)[number]
@@ -227,4 +231,6 @@ export const defaultPreferences: Record<string, string | number | boolean> = {
   [KeyArticleToc]: 'on',
   [KeyScheduledPanorama]: 'on',
   [KeyJumpToComments]: 'on',
+  [KeyBookmarkCount]: 'on',
+  [KeyMediaDownloadEnabled]: 'on',
 }

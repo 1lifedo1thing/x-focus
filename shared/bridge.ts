@@ -11,3 +11,6 @@ export const XF_BRIDGE_MARKER = '__x_focus_bridge_v1__'
 
 /** 排期数据 postMessage 的 type */
 export const SCHEDULED_TWEETS_TYPE = 'XF_SCHEDULED_TWEETS'
+
+/** 推文/长文书签收藏数据 postMessage 的 type */
+export const BOOKMARK_METRICS_TYPE = 'XF_BOOKMARK_METRICS'

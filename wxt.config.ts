@@ -31,7 +31,7 @@ export default defineConfig({
   manifest: (env) => ({
     name: 'X Focus',
     description: 'X/Twitter 界面定制、评论垃圾过滤、爆款雷达与效率辅助工具。',
-    permissions: ['storage'],
+    permissions: ['storage', 'downloads'],
     action: {
       default_title: 'X Focus',
       default_popup: 'popup.html',
