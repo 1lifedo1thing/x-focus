@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.png" width="96" height="96" alt="X Focus Logo" />
+  <img src="assets/logo.png" width="96" height="96" alt="X Better Logo" />
 </p>
 
-<h1 align="center">X Focus</h1>
+<h1 align="center">X Better</h1>
 
 <p align="center">
   <strong>重塑并精简 X/Twitter 网页端浏览体验。</strong><br>
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/promo.png" width="850" alt="X Focus 功能概览" />
+  <img src="assets/promo.png" width="850" alt="X Better 功能概览" />
 </p>
 
 <p align="center">
@@ -79,8 +79,8 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/fxzer/x-focus.git
-cd x-focus
+git clone https://github.com/fxzer/x-better.git
+cd x-better
 
 # 2. 安装依赖
 npm install
@@ -90,7 +90,7 @@ npm run build
 
 # 4. Chrome 中加载
 chrome://extensions → 开发者模式 → 加载已解压的扩展
-→ 选择 x-focus/.output/chrome-mv3/
+→ 选择 x-better/.output/chrome-mv3/
 ```
 
 ---
@@ -135,7 +135,7 @@ npm run clean      # 清理构建产物
 ### 项目结构
 
 ```
-x-focus/
+x-better/
 ├── entrypoints/
 │   ├── content.ts       # 注入 x.com 的内容脚本（isolated world）
 │   ├── interceptor.content.ts # MAIN world 数据拦截器（排期接口拦截）
