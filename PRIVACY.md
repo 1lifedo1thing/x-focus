@@ -1,12 +1,12 @@
-# Privacy Policy for X Focus
+# Privacy Policy for X Better
 
-Last updated: September 2026
+Last updated: November 2026
 
-**X Focus** ("the Extension") is committed to protecting your privacy. This Privacy Policy explains how our extension handles your data.
+**X Better** ("the Extension") is committed to protecting your privacy. This Privacy Policy explains how our extension handles your data.
 
 ## 1. Zero Data Collection
 
-- **No Personal Data Collected**: X Focus does not collect, record, transmit, or sell any personally identifiable information (PII), such as your name, email address, IP address, browsing history across other websites, or account credentials.
+- **No Personal Data Collected**: X Better does not collect, record, transmit, or sell any personally identifiable information (PII), such as your name, email address, IP address, browsing history across other websites, or account credentials.
 - **No Remote Telemetry or Tracking**: The extension does not include any third-party tracking scripts, advertising trackers, or analytics services (e.g., Google Analytics).
 
 ## 2. Local-Only Storage

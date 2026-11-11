@@ -34,7 +34,7 @@ const version = pkg.version
      {{ version }}
     </span>
     <h1 class="text-xl font-extrabold tracking-tight">
-     <span>X FOCUS</span>
+     <span>X BETTER</span>
     </h1>
    </div>
 
